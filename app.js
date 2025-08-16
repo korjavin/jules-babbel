@@ -150,15 +150,15 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         answerPrompt.classList.remove('hidden');
         correctSentenceDisplay.textContent = '';
 
-        // Fisher-Yates shuffle to randomize scrambled words for display
-        let wordsToDisplay = [...exercise.scrambled_words];
-        for (let i = wordsToDisplay.length - 1; i > 0; i--) {
+        // Normalize scrambled words to handle punctuation correctly, then shuffle
+        const normalizedWords = exercise.scrambled_words.flatMap(word => word.match(/[\w']+|[^\s\w]/g) || []);
+        for (let i = normalizedWords.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
+            [normalizedWords[i], normalizedWords[j]] = [normalizedWords[j], normalizedWords[i]];
         }
 
         // Create and display word buttons
-        wordsToDisplay.forEach(word => {
+        normalizedWords.forEach(word => {
             const button = document.createElement('button');
             button.textContent = word;
             button.className = 'btn-word px-4 py-2 rounded-md shadow-sm';
@@ -172,6 +172,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         const clickedWord = event.target.textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
+
         const correctWordArray = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
@@ -224,6 +225,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         if (state.isLocked) return;
 
         const exercise = state.exercises[state.currentExerciseIndex];
+
         const correctWordArray = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
