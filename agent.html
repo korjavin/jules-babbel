@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered German Grammar App | Interactive SRS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: The SPA is designed with a user-centric, thematic flow rather than mirroring the report's sections. It starts with a high-level "Project Vision" to ground the user. The "Application Blueprint" section then allows users to interactively explore the core features and user flow. A dedicated "Linguistic Engine" section details the German grammar rules, making the pedagogical foundation clear. Finally, the "Developer's Corner" provides the technical specifications, including the crucial JSON schema. This structure was chosen to guide different audiences (stakeholders, designers, developers) to the information most relevant to them, enhancing usability and comprehension. -->
+    <!-- Visualization & Content Choices: Report Info -> Goal -> Viz/Presentation -> Interaction -> Justification. 1. Functional Requirements (Table 1) -> Goal: Organize & Inform -> Viz: Interactive Tabbed Cards -> Interaction: Click tabs to reveal details -> Justification: Breaks down complex requirements into digestible, user-driven chunks. 2. Conjunction Rules (Table 2) -> Goal: Organize & Compare -> Viz: Dynamic HTML Table -> Interaction: Filter by conjunction type (Subordinating/Coordinating) -> Justification: Allows users to focus on specific grammar rules, making comparison easier. 3. B1 Vocabulary (Table 4) -> Goal: Inform -> Viz: Searchable List -> Interaction: Live search/filter -> Justification: Provides quick access to a reference list. 4. Development Process -> Goal: Change/Process -> Viz: HTML/CSS Stepped Diagram -> Interaction: Hover to highlight steps -> Justification: Visually represents the AI-to-code workflow in a clear, sequential manner. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #4A4A4A;
+        }
+        .tab-active {
+            border-bottom: 2px solid #A58D78;
+            color: #A58D78;
+            font-weight: 600;
+        }
+        .tab-inactive {
+            color: #757575;
+        }
+        .btn-primary {
+            background-color: #A58D78;
+            color: #FFFFFF;
+            transition: background-color 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #8E7661;
+        }
+        .card {
+            background-color: #FFFFFF;
+            border: 1px solid #EAEAEA;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .step-connector {
+            width: 100%;
+            height: 2px;
+            background-color: #D1C4B7;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translateY(-50%);
+        }
+        .step-item:last-child .step-connector {
+            display: none;
+        }
+        .code-block {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-2xl font-bold text-gray-800">
+                <span class="text-[#A58D78]">SRS</span> | German Grammar App
+            </div>
+            <div class="hidden md:flex space-x-6">
+                <a href="#vision" class="text-gray-600 hover:text-[#A58D78] transition">Project Vision</a>
+                <a href="#blueprint" class="text-gray-600 hover:text-[#A58D78] transition">Application Blueprint</a>
+                <a href="#linguistics" class="text-gray-600 hover:text-[#A58D78] transition">Linguistic Engine</a>
+                <a href="#developer" class="text-gray-600 hover:text-[#A58D78] transition">Developer's Corner</a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+
+        <section id="vision" class="text-center mb-20">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-4">An AI-Powered German Grammar Application</h1>
+            <p class="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">This interactive specification outlines a dynamic, AI-driven application designed to help B1-level students master German conjunctions through an engaging, word-scramble exercise format.</p>
+        </section>
+
+        <section id="blueprint" class="mb-20">
+            <h2 class="text-3xl font-bold text-center mb-10 text-gray-800">Application Blueprint</h2>
+            <p class="text-center text-gray-600 max-w-3xl mx-auto mb-12">This section details the application's core functionality, from dynamic exercise generation to the user feedback loop. The goal is a seamless and intuitive learning experience, where technology enhances pedagogy. Click through the tabs to explore each functional requirement.</p>
+
+            <div class="card rounded-lg p-6 md:p-8">
+                <div class="flex border-b border-gray-200 mb-6">
+                    <button onclick="changeTab('generation')" class="tab-btn py-2 px-4 tab-active">Exercise Generation</button>
+                    <button onclick="changeTab('ui')" class="tab-btn py-2 px-4 tab-inactive">User Interface</button>
+                    <button onclick="changeTab('settings')" class="tab-btn py-2 px-4 tab-inactive">Configuration</button>
+                </div>
+                <div id="generation" class="tab-content">
+                    <h3 class="text-xl font-semibold mb-2 text-[#A58D78]">Dynamic Content Lifecycle</h3>
+                    <p class="text-gray-700">The application's core is its ability to generate fresh exercises on demand. When a user clicks "Generate More," the system makes a secure API call to an LLM, parses the structured JSON response, and presents a new round of seven unique challenges. This ensures a virtually limitless supply of practice material.</p>
+                </div>
+                <div id="ui" class="tab-content hidden">
+                    <h3 class="text-xl font-semibold mb-2 text-[#A58D78]">Interactive Feedback Loop</h3>
+                    <p class="text-gray-700 mb-4">The exercise interface is designed for active learning. Users see an English hint and a set of scrambled German words on buttons.</p>
+                    <ul class="list-disc list-inside space-y-2 text-gray-600">
+                        <li><span class="font-semibold">Correct Selection:</span> The word moves to the sentence line, building the answer.</li>
+                        <li><span class="font-semibold">Incorrect Selection:</span> The button flashes red, providing immediate, non-disruptive feedback.</li>
+                        <li><span class="font-semibold">Completion:</span> Buttons disappear, revealing the correct sentence, and the next exercise loads.</li>
+                    </ul>
+                </div>
+                <div id="settings" class="tab-content hidden">
+                    <h3 class="text-xl font-semibold mb-2 text-[#A58D78]">User-Driven Customization</h3>
+                    <p class="text-gray-700">A dedicated settings panel empowers users to take control of their learning experience. They can securely input their personal OpenAI API token and, more importantly, edit the master prompt used for sentence generation. This allows for fine-tuning the difficulty, vocabulary, or even the grammatical focus of the exercises.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="linguistics" class="mb-20">
+            <h2 class="text-3xl font-bold text-center mb-10 text-gray-800">Linguistic Engine</h2>
+            <p class="text-center text-gray-600 max-w-3xl mx-auto mb-12">The pedagogical strength of this application lies in its precise linguistic rules. The content generated by the AI must strictly adhere to B1-level German grammar, particularly the complex word order changes introduced by different types of conjunctions. Use the filters below to explore the rules.</p>
+            
+            <div class="card rounded-lg p-6 md:p-8">
+                <div class="flex justify-center space-x-4 mb-6">
+                    <button onclick="filterConjunctions('all')" class="btn-primary px-4 py-2 rounded-md">All Types</button>
+                    <button onclick="filterConjunctions('Subordinating')" class="btn-primary px-4 py-2 rounded-md">Subordinating</button>
+                    <button onclick="filterConjunctions('Coordinating')" class="btn-primary px-4 py-2 rounded-md">Coordinating</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table id="conjunctionsTable" class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="p-3 font-semibold text-gray-700 border-b">Conjunction</th>
+                                <th class="p-3 font-semibold text-gray-700 border-b">Type</th>
+                                <th class="p-3 font-semibold text-gray-700 border-b">Meaning</th>
+                                <th class="p-3 font-semibold text-gray-700 border-b">Grammar Rule</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="developer" class="mb-20">
+            <h2 class="text-3xl font-bold text-center mb-10 text-gray-800">Developer's Corner</h2>
+            <p class="text-center text-gray-600 max-w-3xl mx-auto mb-12">This section provides the core technical specifications for development. The key to the application's reliability is the strict enforcement of a JSON schema for all LLM outputs. This ensures that the data received is always structured, predictable, and ready for parsing.</p>
+
+            <div class="card rounded-lg p-6 md:p-8">
+                <h3 class="text-2xl font-semibold mb-4 text-center text-[#A58D78]">AI-to-Code Workflow</h3>
+                <div class="relative flex items-center justify-between w-full max-w-4xl mx-auto my-8">
+                    <div class="step-item flex-1 text-center relative px-2">
+                        <div class="step-connector"></div>
+                        <div class="bg-[#A58D78] text-white rounded-full h-12 w-12 flex items-center justify-center mx-auto mb-2 text-xl font-bold z-10 relative">1</div>
+                        <p class="font-semibold">Master Prompt</p>
+                    </div>
+                    <div class="step-item flex-1 text-center relative px-2">
+                        <div class="step-connector"></div>
+                        <div class="bg-[#A58D78] text-white rounded-full h-12 w-12 flex items-center justify-center mx-auto mb-2 text-xl font-bold z-10 relative">2</div>
+                        <p class="font-semibold">API Call</p>
+                    </div>
+                    <div class="step-item flex-1 text-center relative px-2">
+                         <div class="step-connector"></div>
+                        <div class="bg-[#A58D78] text-white rounded-full h-12 w-12 flex items-center justify-center mx-auto mb-2 text-xl font-bold z-10 relative">3</div>
+                        <p class="font-semibold">JSON Validation</p>
+                    </div>
+                    <div class="step-item flex-1 text-center relative px-2">
+                        <div class="bg-[#A58D78] text-white rounded-full h-12 w-12 flex items-center justify-center mx-auto mb-2 text-xl font-bold z-10 relative">4</div>
+                        <p class="font-semibold">UI Render</p>
+                    </div>
+                </div>
+
+                <h3 class="text-xl font-semibold mt-12 mb-4 text-[#A58D78]">Mandatory JSON Schema for LLM Output</h3>
+                <div class="code-block rounded-lg p-4 text-sm">
+                    <pre id="jsonSchema"></pre>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t mt-12">
+        <div class="container mx-auto px-6 py-4 text-center text-gray-500">
+            <p>&copy; 2025 Interactive Software Requirements Specification</p>
+        </div>
+    </footer>
+
+    <script>
+        const conjunctionsData = [
+            { conjunction: 'weil', type: 'Subordinating', meaning: 'because', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'obwohl', type: 'Subordinating', meaning: 'although', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'damit', type: 'Subordinating', meaning: 'so that, in order to', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'wenn', type: 'Subordinating', meaning: 'if, when', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'dass', type: 'Subordinating', meaning: 'that', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'als', type: 'Subordinating', meaning: 'when (in the past)', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'bevor', type: 'Subordinating', meaning: 'before', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'nachdem', type: 'Subordinating', meaning: 'after', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'ob', type: 'Subordinating', meaning: 'if, whether', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'seit', type: 'Subordinating', meaning: 'since', rule: 'Pushes the conjugated verb to the end of the clause.' },
+            { conjunction: 'und', type: 'Coordinating', meaning: 'and', rule: 'Does not affect the word order of the clause.' },
+            { conjunction: 'oder', type: 'Coordinating', meaning: 'or', rule: 'Does not affect the word order of the clause.' },
+            { conjunction: 'aber', type: 'Coordinating', meaning: 'but', rule: 'Does not affect the word order of the clause.' },
+            { conjunction: 'denn', type: 'Coordinating', meaning: 'because', rule: 'Does not affect the word order of the clause.' },
+            { conjunction: 'sondern', type: 'Coordinating', meaning: 'but, rather', rule: 'Does not affect the word order of the clause.' }
+        ];
+
+        const jsonSchemaData = {
+          "type": "object",
+          "properties": {
+            "exercises": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "conjunction_topic": { "type": "string", "enum": ["weil", "obwohl", "damit", "wenn", "dass", "als", "bevor", "nachdem", "ob", "seit", "denn", "sondern"] },
+                  "english_hint": { "type": "string" },
+                  "correct_german_sentence": { "type": "string" },
+                  "scrambled_words": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["conjunction_topic", "english_hint", "correct_german_sentence", "scrambled_words"]
+              },
+              "minItems": 7,
+              "maxItems": 7
+            }
+          },
+          "required": ["exercises"]
+        };
+
+        function changeTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+            document.getElementById(tabId).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('tab-active');
+                btn.classList.add('tab-inactive');
+            });
+            event.target.classList.add('tab-active');
+            event.target.classList.remove('tab-inactive');
+        }
+
+        function populateConjunctionsTable(data) {
+            const tableBody = document.querySelector('#conjunctionsTable tbody');
+            tableBody.innerHTML = '';
+            data.forEach(item => {
+                const row = `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-3 font-medium text-gray-800">${item.conjunction}</td>
+                        <td class="p-3 text-gray-600">${item.type}</td>
+                        <td class="p-3 text-gray-600">${item.meaning}</td>
+                        <td class="p-3 text-gray-600">${item.rule}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function filterConjunctions(type) {
+            if (type === 'all') {
+                populateConjunctionsTable(conjunctionsData);
+            } else {
+                const filteredData = conjunctionsData.filter(item => item.type === type);
+                populateConjunctionsTable(filteredData);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            populateConjunctionsTable(conjunctionsData);
+            document.getElementById('jsonSchema').textContent = JSON.stringify(jsonSchemaData, null, 2);
+            
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    document.querySelector(this.getAttribute('href')).scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
