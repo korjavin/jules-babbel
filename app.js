@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackArea = document.getElementById('feedback-area');
     const correctSentenceDisplay = document.getElementById('correct-sentence-display');
 
+    const statsMistakesEl = document.getElementById('stats-mistakes');
+    const statsHintsEl = document.getElementById('stats-hints');
+
     // --- Application State ---
     let state = {
         apiKey: '',
@@ -28,7 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
         exercises: [],
         currentExerciseIndex: 0,
         userSentence: [],
-        isLocked: false // To prevent clicks after a sentence is completed
+        isLocked: false, // To prevent clicks after a sentence is completed
+        mistakes: 0,
+        hintsUsed: 0
     };
 
     // --- Sample Data (from agent.html) ---
@@ -163,6 +168,8 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             }
         } else {
             // Incorrect word
+            state.mistakes++;
+            updateStats();
             const button = event.target;
             button.classList.add('incorrect-answer-feedback');
             setTimeout(() => {
@@ -203,6 +210,9 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         if (!nextCorrectWord) return; // All words have been selected
 
+        state.hintsUsed++;
+        updateStats();
+
         const wordButtons = scrambledWordsContainer.querySelectorAll('.btn-word:not(.hidden)');
         for (const button of wordButtons) {
             if (button.textContent === nextCorrectWord) {
@@ -213,6 +223,11 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
                 break;
             }
         }
+    }
+
+    function updateStats() {
+        statsMistakesEl.textContent = `Mistakes: ${state.mistakes}`;
+        statsHintsEl.textContent = `Hints Used: ${state.hintsUsed}`;
     }
 
     // --- Settings Functions ---
@@ -288,6 +303,9 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             if (content.exercises && content.exercises.length > 0) {
                 state.exercises = content.exercises;
                 state.currentExerciseIndex = 0;
+                state.mistakes = 0;
+                state.hintsUsed = 0;
+                updateStats();
                 renderExercise();
             } else {
                 throw new Error('Invalid data structure received from API.');
@@ -317,6 +335,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         state.exercises = sampleExercises.exercises;
         state.currentExerciseIndex = 0;
         renderExercise();
+        updateStats(); // Initialize stats display
         console.log("App initialized with sample data.");
     }
 
