@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const scrambledWordsContainer = document.getElementById('scrambled-words-container');
     const feedbackArea = document.getElementById('feedback-area');
     const correctSentenceDisplay = document.getElementById('correct-sentence-display');
+    const exerciseCounter = document.getElementById('exercise-counter');
+    const emptyStateContainer = document.getElementById('empty-state-container');
 
     const statsMistakesEl = document.getElementById('stats-mistakes');
     const statsHintsEl = document.getElementById('stats-hints');
@@ -122,7 +124,24 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     function renderExercise() {
         state.isLocked = false;
         state.userSentence = [];
+
+        if (state.exercises.length === 0) {
+            exerciseContent.classList.add('hidden');
+            emptyStateContainer.classList.remove('hidden');
+            exerciseCounter.classList.add('hidden');
+            hintBtn.classList.add('hidden');
+            return;
+        }
+
+        exerciseContent.classList.remove('hidden');
+        emptyStateContainer.classList.add('hidden');
+        exerciseCounter.classList.remove('hidden');
+        hintBtn.classList.remove('hidden');
+
+
         const exercise = state.exercises[state.currentExerciseIndex];
+
+        exerciseCounter.textContent = `${state.currentExerciseIndex + 1} / ${state.exercises.length}`;
 
         // Reset UI
         englishHintEl.textContent = exercise.english_hint;
@@ -314,9 +333,9 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         } catch (error) {
             console.error('Error fetching exercises:', error);
             alert(`Failed to fetch new exercises. Please check your API key and network connection. \nError: ${error.message}`);
+            renderExercise(); // Re-render to show empty state or old exercises
         } finally {
             loadingSpinner.classList.add('hidden');
-            exerciseContent.classList.remove('hidden');
             generateBtn.disabled = false;
         }
     }
@@ -332,9 +351,10 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     // --- Initialization ---
     function init() {
         loadSettings();
-        state.exercises = sampleExercises.exercises;
+        state.exercises = [];
         state.currentExerciseIndex = 0;
         renderExercise();
+
         updateStats(); // Initialize stats display
         console.log("App initialized with sample data.");
     }
