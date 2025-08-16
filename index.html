@@ -44,6 +44,11 @@
             border-color: #EF4444; /* Tailwind red-500 */
             color: white;
         }
+        .hint-word {
+            background-color: #60A5FA; /* Tailwind blue-400 */
+            border-color: #3B82F6; /* Tailwind blue-600 */
+            color: white;
+        }
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-5px); }
@@ -93,6 +98,7 @@
 
             <!-- Controls -->
             <div class="text-center">
+                <button id="hint-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Hint</button>
                 <button id="generate-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Generate More Exercises</button>
             </div>
 
