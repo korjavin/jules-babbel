@@ -172,7 +172,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         const clickedWord = event.target.textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
-        const correctWordArray = exercise.correct_german_sentence.split(' ');
+        const correctWordArray = exercise.correct_german_sentence.split(/\s+/).filter(Boolean);
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
         if (clickedWord === nextCorrectWord) {
@@ -224,7 +224,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         if (state.isLocked) return;
 
         const exercise = state.exercises[state.currentExerciseIndex];
-        const correctWordArray = exercise.correct_german_sentence.split(' ');
+        const correctWordArray = exercise.correct_german_sentence.split(/\s+/).filter(Boolean);
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
         if (!nextCorrectWord) return; // All words have been selected
