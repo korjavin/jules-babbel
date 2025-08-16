@@ -1,0 +1,301 @@
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- DOM Elements ---
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const settingsCloseBtn = document.getElementById('settings-close-btn');
+    const settingsSaveBtn = document.getElementById('settings-save-btn');
+    const apiKeyInput = document.getElementById('api-key-input');
+    const masterPromptInput = document.getElementById('master-prompt-input');
+
+    const generateBtn = document.getElementById('generate-btn');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const exerciseContent = document.getElementById('exercise-content');
+
+    const englishHintEl = document.getElementById('english-hint');
+    const answerArea = document.getElementById('answer-area');
+    const answerPrompt = document.getElementById('answer-prompt');
+    const constructedSentenceEl = document.getElementById('constructed-sentence');
+    const scrambledWordsContainer = document.getElementById('scrambled-words-container');
+    const feedbackArea = document.getElementById('feedback-area');
+    const correctSentenceDisplay = document.getElementById('correct-sentence-display');
+
+    // --- Application State ---
+    let state = {
+        apiKey: '',
+        masterPrompt: '',
+        exercises: [],
+        currentExerciseIndex: 0,
+        userSentence: [],
+        isLocked: false // To prevent clicks after a sentence is completed
+    };
+
+    // --- Sample Data (from agent.html) ---
+    const sampleExercises = {
+        "exercises": [
+            {
+                "conjunction_topic": "weil",
+                "english_hint": "He is learning German because he wants to work in Germany.",
+                "correct_german_sentence": "Er lernt Deutsch, weil er in Deutschland arbeiten will.",
+                "scrambled_words": ["er", "in", "will", "arbeiten", "Deutschland", "lernt", "Deutsch,", "weil"]
+            },
+            {
+                "conjunction_topic": "obwohl",
+                "english_hint": "She is going for a walk, although it is raining.",
+                "correct_german_sentence": "Sie geht spazieren, obwohl es regnet.",
+                "scrambled_words": ["obwohl", "es", "Sie", "geht", "spazieren,", "regnet"]
+            },
+            {
+                "conjunction_topic": "und",
+                "english_hint": "He is tired, but he is still working.",
+                "correct_german_sentence": "Er ist müde, aber er arbeitet noch.",
+                "scrambled_words": ["er", "arbeitet", "müde,", "aber", "ist", "noch", "Er"]
+            },
+            {
+                "conjunction_topic": "denn",
+                "english_hint": "I am eating an apple, because I am hungry.",
+                "correct_german_sentence": "Ich esse einen Apfel, denn ich habe Hunger.",
+                "scrambled_words": ["denn", "ich", "habe", "Ich", "esse", "einen", "Apfel,", "Hunger"]
+            },
+            {
+                "conjunction_topic": "wenn",
+                "english_hint": "If the weather is nice, we will go to the park.",
+                "correct_german_sentence": "Wenn das Wetter schön ist, gehen wir in den Park.",
+                "scrambled_words": ["in", "den", "Park", "wir", "gehen", "schön", "ist,", "Wenn", "das", "Wetter"]
+            },
+            {
+                "conjunction_topic": "dass",
+                "english_hint": "I hope that you are well.",
+                "correct_german_sentence": "Ich hoffe, dass es dir gut geht.",
+                "scrambled_words": ["dir", "gut", "es", "geht", "dass", "Ich", "hoffe,"]
+            },
+            {
+                "conjunction_topic": "sondern",
+                "english_hint": "He doesn't drive a car, but rather a motorcycle.",
+                "correct_german_sentence": "Er fährt kein Auto, sondern ein Motorrad.",
+                "scrambled_words": ["sondern", "ein", "Motorrad", "Er", "fährt", "kein", "Auto,"]
+            }
+        ]
+    };
+
+    const defaultMasterPrompt = `You are an expert German language tutor creating B1-level grammar exercises. Your task is to generate a JSON object containing exactly 7 unique sentences focused on German conjunctions.
+
+Please adhere to the following rules:
+1.  **Sentence Structure:** Each sentence must correctly use a German conjunction. Include a mix of coordinating and subordinating conjunctions from the provided list.
+2.  **Vocabulary:** Use common B1-level vocabulary.
+3.  **Clarity:** The English hint must be a natural and accurate translation of the German sentence.
+4.  **Scrambled Words:** The \`scrambled_words\` array must contain all the words from the \`correct_german_sentence\`, including punctuation attached to words (e.g., "Deutsch,").
+
+Conjunction List: weil, obwohl, damit, wenn, dass, als, bevor, nachdem, ob, seit, und, oder, aber, denn, sondern.
+
+Return ONLY the JSON object, with no other text or explanations. The JSON object must validate against this schema:
+{
+  "type": "object",
+  "properties": {
+    "exercises": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "conjunction_topic": { "type": "string" },
+          "english_hint": { "type": "string" },
+          "correct_german_sentence": { "type": "string" },
+          "scrambled_words": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["conjunction_topic", "english_hint", "correct_german_sentence", "scrambled_words"]
+      },
+      "minItems": 7,
+      "maxItems": 7
+    }
+  },
+  "required": ["exercises"]
+}`;
+
+    // --- Functions ---
+
+    function renderExercise() {
+        state.isLocked = false;
+        state.userSentence = [];
+        const exercise = state.exercises[state.currentExerciseIndex];
+
+        // Reset UI
+        englishHintEl.textContent = exercise.english_hint;
+        scrambledWordsContainer.innerHTML = '';
+        constructedSentenceEl.innerHTML = '';
+        answerPrompt.classList.remove('hidden');
+        correctSentenceDisplay.textContent = '';
+
+        // Fisher-Yates shuffle to randomize scrambled words for display
+        let wordsToDisplay = [...exercise.scrambled_words];
+        for (let i = wordsToDisplay.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
+        }
+
+        // Create and display word buttons
+        wordsToDisplay.forEach(word => {
+            const button = document.createElement('button');
+            button.textContent = word;
+            button.className = 'btn-word px-4 py-2 rounded-md shadow-sm';
+            button.addEventListener('click', handleWordClick);
+            scrambledWordsContainer.appendChild(button);
+        });
+    }
+
+    function handleWordClick(event) {
+        if (state.isLocked) return;
+
+        const clickedWord = event.target.textContent;
+        const exercise = state.exercises[state.currentExerciseIndex];
+        const correctWordArray = exercise.correct_german_sentence.split(' ');
+        const nextCorrectWord = correctWordArray[state.userSentence.length];
+
+        if (clickedWord === nextCorrectWord) {
+            // Correct word
+            state.userSentence.push(clickedWord);
+            updateConstructedSentence();
+            event.target.classList.add('hidden'); // Hide the button
+
+            if (state.userSentence.length === correctWordArray.length) {
+                // Sentence complete
+                handleSentenceCompletion();
+            }
+        } else {
+            // Incorrect word
+            const button = event.target;
+            button.classList.add('incorrect-answer-feedback');
+            setTimeout(() => {
+                button.classList.remove('incorrect-answer-feedback');
+            }, 500);
+        }
+    }
+
+    function updateConstructedSentence() {
+        constructedSentenceEl.innerHTML = '';
+        answerPrompt.classList.add('hidden');
+        state.userSentence.forEach(word => {
+            const wordEl = document.createElement('span');
+            wordEl.textContent = word;
+            wordEl.className = 'bg-green-100 text-green-800 px-3 py-1 rounded-md';
+            constructedSentenceEl.appendChild(wordEl);
+        });
+    }
+
+    function handleSentenceCompletion() {
+        state.isLocked = true;
+        const exercise = state.exercises[state.currentExerciseIndex];
+        correctSentenceDisplay.textContent = `Correct! ${exercise.correct_german_sentence}`;
+
+        // Automatically load the next exercise after a delay
+        setTimeout(() => {
+            state.currentExerciseIndex = (state.currentExerciseIndex + 1) % state.exercises.length;
+            renderExercise();
+        }, 3000);
+    }
+
+    // --- Settings Functions ---
+    function openSettingsModal() {
+        apiKeyInput.value = state.apiKey;
+        masterPromptInput.value = state.masterPrompt;
+        settingsModal.classList.remove('hidden');
+    }
+
+    function closeSettingsModal() {
+        settingsModal.classList.add('hidden');
+    }
+
+    function saveSettings() {
+        state.apiKey = apiKeyInput.value.trim();
+        state.masterPrompt = masterPromptInput.value.trim();
+
+        localStorage.setItem('srsGermanApiKey', state.apiKey);
+        localStorage.setItem('srsGermanMasterPrompt', state.masterPrompt);
+
+        alert('Settings saved!');
+        closeSettingsModal();
+    }
+
+    function loadSettings() {
+        const savedApiKey = localStorage.getItem('srsGermanApiKey');
+        const savedMasterPrompt = localStorage.getItem('srsGermanMasterPrompt');
+
+        if (savedApiKey) {
+            state.apiKey = savedApiKey;
+        }
+        if (savedMasterPrompt) {
+            state.masterPrompt = savedMasterPrompt;
+        } else {
+            state.masterPrompt = defaultMasterPrompt;
+        }
+    }
+
+    // --- API Functions ---
+    async function fetchExercises() {
+        if (!state.apiKey) {
+            alert('Please set your OpenAI API key in the settings.');
+            openSettingsModal();
+            return;
+        }
+
+        loadingSpinner.classList.remove('hidden');
+        exerciseContent.classList.add('hidden');
+        generateBtn.disabled = true;
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${state.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-3.5-turbo-1106', // Or another suitable model
+                    messages: [{ role: 'user', content: state.masterPrompt }],
+                    response_format: { type: 'json_object' }
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`API Error: ${response.statusText} - ${errorData.error.message}`);
+            }
+
+            const data = await response.json();
+            const content = JSON.parse(data.choices[0].message.content);
+
+            if (content.exercises && content.exercises.length > 0) {
+                state.exercises = content.exercises;
+                state.currentExerciseIndex = 0;
+                renderExercise();
+            } else {
+                throw new Error('Invalid data structure received from API.');
+            }
+
+        } catch (error) {
+            console.error('Error fetching exercises:', error);
+            alert(`Failed to fetch new exercises. Please check your API key and network connection. \nError: ${error.message}`);
+        } finally {
+            loadingSpinner.classList.add('hidden');
+            exerciseContent.classList.remove('hidden');
+            generateBtn.disabled = false;
+        }
+    }
+
+    // --- Event Listeners ---
+    settingsBtn.addEventListener('click', openSettingsModal);
+    settingsCloseBtn.addEventListener('click', closeSettingsModal);
+    settingsSaveBtn.addEventListener('click', saveSettings);
+    generateBtn.addEventListener('click', fetchExercises);
+
+
+    // --- Initialization ---
+    function init() {
+        loadSettings();
+        state.exercises = sampleExercises.exercises;
+        state.currentExerciseIndex = 0;
+        renderExercise();
+        console.log("App initialized with sample data.");
+    }
+
+    init();
+});
