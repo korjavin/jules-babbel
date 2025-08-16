@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const masterPromptInput = document.getElementById('master-prompt-input');
 
     const generateBtn = document.getElementById('generate-btn');
+    const hintBtn = document.getElementById('hint-btn');
     const loadingSpinner = document.getElementById('loading-spinner');
     const exerciseContent = document.getElementById('exercise-content');
 
@@ -193,6 +194,27 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         }, 3000);
     }
 
+    function handleHintClick() {
+        if (state.isLocked) return;
+
+        const exercise = state.exercises[state.currentExerciseIndex];
+        const correctWordArray = exercise.correct_german_sentence.split(' ');
+        const nextCorrectWord = correctWordArray[state.userSentence.length];
+
+        if (!nextCorrectWord) return; // All words have been selected
+
+        const wordButtons = scrambledWordsContainer.querySelectorAll('.btn-word:not(.hidden)');
+        for (const button of wordButtons) {
+            if (button.textContent === nextCorrectWord) {
+                button.classList.add('hint-word');
+                setTimeout(() => {
+                    button.classList.remove('hint-word');
+                }, 800); // Highlight for 800ms
+                break;
+            }
+        }
+    }
+
     // --- Settings Functions ---
     function openSettingsModal() {
         apiKeyInput.value = state.apiKey;
@@ -286,6 +308,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     settingsCloseBtn.addEventListener('click', closeSettingsModal);
     settingsSaveBtn.addEventListener('click', saveSettings);
     generateBtn.addEventListener('click', fetchExercises);
+    hintBtn.addEventListener('click', handleHintClick);
 
 
     // --- Initialization ---
