@@ -118,6 +118,14 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
     // --- Functions ---
 
+    function getHotkey(index) {
+        if (index < 9) {
+            return (index + 1).toString(); // 1-9
+        } else {
+            return String.fromCharCode(97 + index - 9); // a, b, c, etc.
+        }
+    }
+
     function renderExercise() {
         state.isLocked = false;
         state.userSentence = [];
@@ -154,11 +162,26 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
         }
 
-        // Create and display word buttons
-        wordsToDisplay.forEach(word => {
+        // Create and display word buttons with hotkeys
+        wordsToDisplay.forEach((word, index) => {
             const button = document.createElement('button');
-            button.textContent = word;
-            button.className = 'btn-word px-4 py-2 rounded-md shadow-sm';
+            const hotkey = getHotkey(index);
+            
+            // Create hotkey indicator
+            const hotkeySpan = document.createElement('span');
+            hotkeySpan.textContent = hotkey;
+            hotkeySpan.className = 'hotkey-indicator';
+            
+            // Create word span
+            const wordSpan = document.createElement('span');
+            wordSpan.textContent = word;
+            
+            // Append both to button
+            button.appendChild(hotkeySpan);
+            button.appendChild(wordSpan);
+            
+            button.className = 'btn-word px-4 py-2 rounded-md shadow-sm relative';
+            button.dataset.hotkey = hotkey;
             button.addEventListener('click', handleWordClick);
             scrambledWordsContainer.appendChild(button);
         });
@@ -167,7 +190,8 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     function handleWordClick(event) {
         if (state.isLocked) return;
 
-        const clickedWord = event.target.textContent;
+        const button = event.target.closest('.btn-word');
+        const clickedWord = button.querySelector('span:last-child').textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
         const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
@@ -176,7 +200,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             // Correct word
             state.userSentence.push(clickedWord);
             updateConstructedSentence();
-            event.target.classList.add('hidden'); // Hide the button
+            button.classList.add('hidden'); // Hide the button
 
             if (state.userSentence.length === correctWordArray.length) {
                 // Sentence complete
@@ -186,7 +210,6 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             // Incorrect word
             state.mistakes++;
             updateStats();
-            const button = event.target;
             button.classList.add('incorrect-answer-feedback');
             setTimeout(() => {
                 button.classList.remove('incorrect-answer-feedback');
@@ -231,7 +254,8 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         const wordButtons = scrambledWordsContainer.querySelectorAll('.btn-word:not(.hidden)');
         for (const button of wordButtons) {
-            if (button.textContent === nextCorrectWord) {
+            const buttonWord = button.querySelector('span:last-child').textContent;
+            if (buttonWord === nextCorrectWord) {
                 button.classList.add('hint-word');
                 setTimeout(() => {
                     button.classList.remove('hint-word');
@@ -244,6 +268,20 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     function updateStats() {
         statsMistakesEl.textContent = `Mistakes: ${state.mistakes}`;
         statsHintsEl.textContent = `Hints Used: ${state.hintsUsed}`;
+    }
+
+    function handleKeyPress(event) {
+        if (state.isLocked) return;
+        
+        const key = event.key.toLowerCase();
+        const wordButtons = scrambledWordsContainer.querySelectorAll('.btn-word:not(.hidden)');
+        
+        for (const button of wordButtons) {
+            if (button.dataset.hotkey === key) {
+                button.click();
+                break;
+            }
+        }
     }
 
     // --- Settings Functions ---
@@ -343,6 +381,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     settingsSaveBtn.addEventListener('click', saveSettings);
     generateBtn.addEventListener('click', fetchExercises);
     hintBtn.addEventListener('click', handleHintClick);
+    document.addEventListener('keydown', handleKeyPress);
 
 
     // --- Initialization ---
