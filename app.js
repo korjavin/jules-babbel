@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsModal = document.getElementById('settings-modal');
     const settingsCloseBtn = document.getElementById('settings-close-btn');
     const settingsSaveBtn = document.getElementById('settings-save-btn');
-    const apiKeyInput = document.getElementById('api-key-input');
     const openaiUrlInput = document.getElementById('openai-url-input');
     const modelNameInput = document.getElementById('model-name-input');
     const masterPromptInput = document.getElementById('master-prompt-input');
@@ -30,7 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Application State ---
     let state = {
-        apiKey: '',
         openaiUrl: '',
         modelName: '',
         masterPrompt: '',
@@ -42,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
         hintsUsed: 0
     };
 
-    // --- Sample Data (from agent.html) ---
+    // --- Sample Data ---
     const sampleExercises = {
         "exercises": [
             {
@@ -321,7 +319,6 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
     // --- Settings Functions ---
     function openSettingsModal() {
-        apiKeyInput.value = state.apiKey;
         openaiUrlInput.value = state.openaiUrl;
         modelNameInput.value = state.modelName;
         masterPromptInput.value = state.masterPrompt;
@@ -333,12 +330,10 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     }
 
     function saveSettings() {
-        state.apiKey = apiKeyInput.value.trim();
         state.openaiUrl = openaiUrlInput.value.trim();
         state.modelName = modelNameInput.value.trim();
         state.masterPrompt = masterPromptInput.value.trim();
 
-        localStorage.setItem('srsGermanApiKey', state.apiKey);
         localStorage.setItem('srsGermanOpenaiUrl', state.openaiUrl);
         localStorage.setItem('srsGermanModelName', state.modelName);
         localStorage.setItem('srsGermanMasterPrompt', state.masterPrompt);
@@ -348,14 +343,10 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     }
 
     function loadSettings() {
-        const savedApiKey = localStorage.getItem('srsGermanApiKey');
         const savedOpenaiUrl = localStorage.getItem('srsGermanOpenaiUrl');
         const savedModelName = localStorage.getItem('srsGermanModelName');
         const savedMasterPrompt = localStorage.getItem('srsGermanMasterPrompt');
 
-        if (savedApiKey) {
-            state.apiKey = savedApiKey;
-        }
         if (savedOpenaiUrl) {
             state.openaiUrl = savedOpenaiUrl;
         }
@@ -371,29 +362,20 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
     // --- API Functions ---
     async function fetchExercises() {
-        if (!state.apiKey) {
-            alert('Please set your OpenAI API key in the settings.');
-            openSettingsModal();
-            return;
-        }
-
         loadingSpinner.classList.remove('hidden');
         exerciseContent.classList.add('hidden');
         generateBtn.disabled = true;
 
         try {
-            const apiUrl = state.openaiUrl || 'https://api.openai.com/v1';
-            const modelName = state.modelName || 'gpt-3.5-turbo-1106';
-            const response = await fetch(`${apiUrl}/chat/completions`, {
+            const response = await fetch('/api/generate', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${state.apiKey}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: modelName,
-                    messages: [{ role: 'user', content: state.masterPrompt }],
-                    response_format: { type: 'json_object' }
+                    master_prompt: state.masterPrompt,
+                    openai_url: state.openaiUrl,
+                    model_name: state.modelName
                 })
             });
 
