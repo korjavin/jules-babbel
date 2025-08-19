@@ -126,6 +126,23 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         }
     }
 
+    function isPunctuation(token) {
+        return /^[^\p{L}\p{N}]+$/u.test(token);
+    }
+
+    function addPunctuationIfNeeded(exercise, userSentence) {
+        const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
+        
+        while (userSentence.length < correctWordArray.length) {
+            const nextToken = correctWordArray[userSentence.length];
+            if (isPunctuation(nextToken)) {
+                userSentence.push(nextToken);
+            } else {
+                break;
+            }
+        }
+    }
+
     function renderExercise() {
         state.isLocked = false;
         state.userSentence = [];
@@ -156,13 +173,14 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         correctSentenceDisplay.textContent = '';
 
         // Tokenize the correct sentence to create word buttons, then shuffle them.
-        const wordsToDisplay = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
+        const allTokens = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
+        const wordsToDisplay = allTokens.filter(token => !isPunctuation(token));
         for (let i = wordsToDisplay.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
         }
 
-        // Create and display word buttons with hotkeys
+        // Create and display word buttons with hotkeys (excluding punctuation)
         wordsToDisplay.forEach((word, index) => {
             const button = document.createElement('button');
             const hotkey = getHotkey(index);
@@ -194,11 +212,18 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         const clickedWord = button.querySelector('span:last-child').textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
         const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
-        const nextCorrectWord = correctWordArray[state.userSentence.length];
+        
+        // Find the next non-punctuation word that should be selected
+        let nextCorrectWordIndex = state.userSentence.length;
+        while (nextCorrectWordIndex < correctWordArray.length && isPunctuation(correctWordArray[nextCorrectWordIndex])) {
+            nextCorrectWordIndex++;
+        }
+        const nextCorrectWord = correctWordArray[nextCorrectWordIndex];
 
         if (clickedWord === nextCorrectWord) {
-            // Correct word
+            // Correct word - add it and any punctuation that should come before it
             state.userSentence.push(clickedWord);
+            addPunctuationIfNeeded(exercise, state.userSentence);
             updateConstructedSentence();
             button.classList.add('hidden'); // Hide the button
 
@@ -245,7 +270,13 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         const exercise = state.exercises[state.currentExerciseIndex];
         const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
-        const nextCorrectWord = correctWordArray[state.userSentence.length];
+        
+        // Find the next non-punctuation word that should be selected
+        let nextCorrectWordIndex = state.userSentence.length;
+        while (nextCorrectWordIndex < correctWordArray.length && isPunctuation(correctWordArray[nextCorrectWordIndex])) {
+            nextCorrectWordIndex++;
+        }
+        const nextCorrectWord = correctWordArray[nextCorrectWordIndex];
 
         if (!nextCorrectWord) return; // All words have been selected
 
