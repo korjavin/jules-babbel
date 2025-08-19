@@ -17,7 +17,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
-WORKDIR /root/
+
+# Create a non-root user
+RUN adduser -D -s /bin/sh appuser
+
+# Create app directory
+WORKDIR /app
 
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
@@ -25,8 +30,9 @@ COPY --from=builder /app/main .
 # Create static directory and copy frontend files
 COPY index.html app.js ./static/
 
-# Create a non-root user
-RUN adduser -D -s /bin/sh appuser
+# Make the binary executable and change ownership
+RUN chmod +x ./main && chown -R appuser:appuser /app
+
 USER appuser
 
 # Expose port
