@@ -11,8 +11,6 @@ import (
 
 type GenerateRequest struct {
 	MasterPrompt string `json:"master_prompt"`
-	OpenAIURL    string `json:"openai_url,omitempty"`
-	ModelName    string `json:"model_name,omitempty"`
 }
 
 type OpenAIRequest struct {
@@ -79,11 +77,21 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get API key from environment
+	// Get configuration from environment
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		http.Error(w, "OpenAI API key not configured", http.StatusInternalServerError)
 		return
+	}
+
+	openaiURL := os.Getenv("OPENAI_URL")
+	if openaiURL == "" {
+		openaiURL = "https://api.openai.com/v1"
+	}
+	
+	modelName := os.Getenv("MODEL_NAME")
+	if modelName == "" {
+		modelName = "gpt-3.5-turbo-1106"
 	}
 
 	// Parse request
@@ -91,17 +99,6 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
-	}
-
-	// Set defaults
-	openaiURL := req.OpenAIURL
-	if openaiURL == "" {
-		openaiURL = "https://api.openai.com/v1"
-	}
-	
-	modelName := req.ModelName
-	if modelName == "" {
-		modelName = "gpt-3.5-turbo-1106"
 	}
 
 	// Create OpenAI request

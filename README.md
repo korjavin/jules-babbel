@@ -18,6 +18,8 @@ An interactive German language learning application that helps B1-level students
 ```bash
 docker run -p 8080:8080 \
   -e OPENAI_API_KEY=your_openai_api_key_here \
+  -e OPENAI_URL=https://api.openai.com/v1 \
+  -e MODEL_NAME=gpt-3.5-turbo-1106 \
   ghcr.io/YOUR_USERNAME/german-conjuctions-trainer:latest
 ```
 
@@ -30,6 +32,8 @@ docker build -t german-conjunctions-trainer .
 # Run the container
 docker run -p 8080:8080 \
   -e OPENAI_API_KEY=your_openai_api_key_here \
+  -e OPENAI_URL=https://api.openai.com/v1 \
+  -e MODEL_NAME=gpt-4 \
   german-conjunctions-trainer
 ```
 
@@ -38,14 +42,29 @@ docker run -p 8080:8080 \
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | ✅ Yes | - | Your OpenAI API key or compatible API key |
+| `OPENAI_URL` | ❌ No | `https://api.openai.com/v1` | API endpoint URL |
+| `MODEL_NAME` | ❌ No | `gpt-3.5-turbo-1106` | Model name to use |
 | `PORT` | ❌ No | `8080` | Port for the web server |
 
 ## Custom API Providers
 
-The application supports any OpenAI-compatible API. Configure through the settings UI:
+The application supports any OpenAI-compatible API through environment variables:
 
-- **OpenAI API URL**: Custom API endpoint (e.g., `https://api.anthropic.com/v1` for Claude)
-- **Model Name**: Specific model to use (e.g., `gpt-4`, `claude-3-sonnet`, etc.)
+```bash
+# Example: Using Claude via Anthropic API
+docker run -p 8080:8080 \
+  -e OPENAI_API_KEY=your_anthropic_key \
+  -e OPENAI_URL=https://api.anthropic.com/v1 \
+  -e MODEL_NAME=claude-3-sonnet-20240229 \
+  german-conjunctions-trainer
+
+# Example: Using Azure OpenAI
+docker run -p 8080:8080 \
+  -e OPENAI_API_KEY=your_azure_key \
+  -e OPENAI_URL=https://your-resource.openai.azure.com/v1 \
+  -e MODEL_NAME=gpt-4 \
+  german-conjunctions-trainer
+```
 
 ## Development
 

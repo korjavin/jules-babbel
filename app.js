@@ -5,8 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsModal = document.getElementById('settings-modal');
     const settingsCloseBtn = document.getElementById('settings-close-btn');
     const settingsSaveBtn = document.getElementById('settings-save-btn');
-    const openaiUrlInput = document.getElementById('openai-url-input');
-    const modelNameInput = document.getElementById('model-name-input');
     const masterPromptInput = document.getElementById('master-prompt-input');
 
     const generateBtn = document.getElementById('generate-btn');
@@ -29,8 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Application State ---
     let state = {
-        openaiUrl: '',
-        modelName: '',
         masterPrompt: '',
         exercises: [],
         currentExerciseIndex: 0,
@@ -319,8 +315,6 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
     // --- Settings Functions ---
     function openSettingsModal() {
-        openaiUrlInput.value = state.openaiUrl;
-        modelNameInput.value = state.modelName;
         masterPromptInput.value = state.masterPrompt;
         settingsModal.classList.remove('hidden');
     }
@@ -330,12 +324,8 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     }
 
     function saveSettings() {
-        state.openaiUrl = openaiUrlInput.value.trim();
-        state.modelName = modelNameInput.value.trim();
         state.masterPrompt = masterPromptInput.value.trim();
 
-        localStorage.setItem('srsGermanOpenaiUrl', state.openaiUrl);
-        localStorage.setItem('srsGermanModelName', state.modelName);
         localStorage.setItem('srsGermanMasterPrompt', state.masterPrompt);
 
         alert('Settings saved!');
@@ -343,16 +333,8 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     }
 
     function loadSettings() {
-        const savedOpenaiUrl = localStorage.getItem('srsGermanOpenaiUrl');
-        const savedModelName = localStorage.getItem('srsGermanModelName');
         const savedMasterPrompt = localStorage.getItem('srsGermanMasterPrompt');
 
-        if (savedOpenaiUrl) {
-            state.openaiUrl = savedOpenaiUrl;
-        }
-        if (savedModelName) {
-            state.modelName = savedModelName;
-        }
         if (savedMasterPrompt) {
             state.masterPrompt = savedMasterPrompt;
         } else {
@@ -373,9 +355,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    master_prompt: state.masterPrompt,
-                    openai_url: state.openaiUrl,
-                    model_name: state.modelName
+                    master_prompt: state.masterPrompt
                 })
             });
 
