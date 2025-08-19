@@ -92,8 +92,6 @@ Please adhere to the following rules:
 1.  **Sentence Structure:** Each sentence must correctly use a German conjunction. Include a mix of coordinating and subordinating conjunctions from the provided list.
 2.  **Vocabulary:** Use common B1-level vocabulary.
 3.  **Clarity:** The English hint must be a natural and accurate translation of the German sentence.
-4.  **Scrambled Words:** The \`scrambled_words\` array must contain all the words from the \`correct_german_sentence\`, including punctuation attached to words (e.g., "Deutsch,").
-
 Conjunction List: weil, obwohl, damit, wenn, dass, als, bevor, nachdem, ob, seit, und, oder, aber, denn, sondern.
 
 Return ONLY the JSON object, with no other text or explanations. The JSON object must validate against this schema:
@@ -107,10 +105,9 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         "properties": {
           "conjunction_topic": { "type": "string" },
           "english_hint": { "type": "string" },
-          "correct_german_sentence": { "type": "string" },
-          "scrambled_words": { "type": "array", "items": { "type": "string" } }
+          "correct_german_sentence": { "type": "string" }
         },
-        "required": ["conjunction_topic", "english_hint", "correct_german_sentence", "scrambled_words"]
+        "required": ["conjunction_topic", "english_hint", "correct_german_sentence"]
       },
       "minItems": 7,
       "maxItems": 7
@@ -150,15 +147,15 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         answerPrompt.classList.remove('hidden');
         correctSentenceDisplay.textContent = '';
 
-        // Normalize scrambled words to handle punctuation correctly, then shuffle
-        const normalizedWords = exercise.scrambled_words.flatMap(word => word.match(/[\w']+|[^\s\w]/g) || []);
-        for (let i = normalizedWords.length - 1; i > 0; i--) {
+        // Tokenize the correct sentence to create word buttons, then shuffle them.
+        const wordsToDisplay = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
+        for (let i = wordsToDisplay.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [normalizedWords[i], normalizedWords[j]] = [normalizedWords[j], normalizedWords[i]];
+            [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
         }
 
         // Create and display word buttons
-        normalizedWords.forEach(word => {
+        wordsToDisplay.forEach(word => {
             const button = document.createElement('button');
             button.textContent = word;
             button.className = 'btn-word px-4 py-2 rounded-md shadow-sm';
@@ -172,7 +169,6 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         const clickedWord = event.target.textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
-
         const correctWordArray = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
@@ -225,7 +221,6 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         if (state.isLocked) return;
 
         const exercise = state.exercises[state.currentExerciseIndex];
-
         const correctWordArray = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
