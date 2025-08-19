@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsCloseBtn = document.getElementById('settings-close-btn');
     const settingsSaveBtn = document.getElementById('settings-save-btn');
     const apiKeyInput = document.getElementById('api-key-input');
+    const openaiUrlInput = document.getElementById('openai-url-input');
+    const modelNameInput = document.getElementById('model-name-input');
     const masterPromptInput = document.getElementById('master-prompt-input');
 
     const generateBtn = document.getElementById('generate-btn');
@@ -29,6 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Application State ---
     let state = {
         apiKey: '',
+        openaiUrl: '',
+        modelName: '',
         masterPrompt: '',
         exercises: [],
         currentExerciseIndex: 0,
@@ -318,6 +322,8 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     // --- Settings Functions ---
     function openSettingsModal() {
         apiKeyInput.value = state.apiKey;
+        openaiUrlInput.value = state.openaiUrl;
+        modelNameInput.value = state.modelName;
         masterPromptInput.value = state.masterPrompt;
         settingsModal.classList.remove('hidden');
     }
@@ -328,9 +334,13 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
     function saveSettings() {
         state.apiKey = apiKeyInput.value.trim();
+        state.openaiUrl = openaiUrlInput.value.trim();
+        state.modelName = modelNameInput.value.trim();
         state.masterPrompt = masterPromptInput.value.trim();
 
         localStorage.setItem('srsGermanApiKey', state.apiKey);
+        localStorage.setItem('srsGermanOpenaiUrl', state.openaiUrl);
+        localStorage.setItem('srsGermanModelName', state.modelName);
         localStorage.setItem('srsGermanMasterPrompt', state.masterPrompt);
 
         alert('Settings saved!');
@@ -339,10 +349,18 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
     function loadSettings() {
         const savedApiKey = localStorage.getItem('srsGermanApiKey');
+        const savedOpenaiUrl = localStorage.getItem('srsGermanOpenaiUrl');
+        const savedModelName = localStorage.getItem('srsGermanModelName');
         const savedMasterPrompt = localStorage.getItem('srsGermanMasterPrompt');
 
         if (savedApiKey) {
             state.apiKey = savedApiKey;
+        }
+        if (savedOpenaiUrl) {
+            state.openaiUrl = savedOpenaiUrl;
+        }
+        if (savedModelName) {
+            state.modelName = savedModelName;
         }
         if (savedMasterPrompt) {
             state.masterPrompt = savedMasterPrompt;
@@ -364,14 +382,16 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         generateBtn.disabled = true;
 
         try {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            const apiUrl = state.openaiUrl || 'https://api.openai.com/v1';
+            const modelName = state.modelName || 'gpt-3.5-turbo-1106';
+            const response = await fetch(`${apiUrl}/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${state.apiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'gpt-3.5-turbo-1106', // Or another suitable model
+                    model: modelName,
                     messages: [{ role: 'user', content: state.masterPrompt }],
                     response_format: { type: 'json_object' }
                 })
