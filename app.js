@@ -148,7 +148,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         correctSentenceDisplay.textContent = '';
 
         // Tokenize the correct sentence to create word buttons, then shuffle them.
-        const wordsToDisplay = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
+        const wordsToDisplay = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
         for (let i = wordsToDisplay.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
@@ -169,7 +169,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
 
         const clickedWord = event.target.textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
-        const correctWordArray = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
+        const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
         if (clickedWord === nextCorrectWord) {
@@ -221,7 +221,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         if (state.isLocked) return;
 
         const exercise = state.exercises[state.currentExerciseIndex];
-        const correctWordArray = exercise.correct_german_sentence.match(/[\w']+|[^\s\w]/g) || [];
+        const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
         const nextCorrectWord = correctWordArray[state.userSentence.length];
 
         if (!nextCorrectWord) return; // All words have been selected
