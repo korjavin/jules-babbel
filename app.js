@@ -3,7 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsBtn = document.getElementById('settings-btn');
     const settingsModal = document.getElementById('settings-modal');
     const settingsCloseBtn = document.getElementById('settings-close-btn');
-    const topicSelector = document.getElementById('topic-selector');
+    const topicSearch = document.getElementById('topic-search');
+    const topicDropdown = document.getElementById('topic-dropdown');
 
     const generateBtn = document.getElementById('generate-btn');
     const hintBtn = document.getElementById('hint-btn');
@@ -427,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             state.topics = data.topics || [];
             
-            populateTopicSelector();
             renderTopicsList();
             
             // Load selected topic from localStorage or use first available
@@ -438,31 +438,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.currentTopicId = state.topics[0].id;
             }
             
-            topicSelector.value = state.currentTopicId;
+            const currentTopic = state.topics.find(t => t.id === state.currentTopicId);
+            if (currentTopic) {
+                topicSearch.value = currentTopic.name;
+            }
             
         } catch (error) {
             console.error('Error loading topics:', error);
             alert('Failed to load topics. Please refresh the page.');
         }
-    }
-
-    function populateTopicSelector() {
-        topicSelector.innerHTML = '';
-        
-        if (state.topics.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'No topics available';
-            topicSelector.appendChild(option);
-            return;
-        }
-        
-        state.topics.forEach(topic => {
-            const option = document.createElement('option');
-            option.value = topic.id;
-            option.textContent = topic.name;
-            topicSelector.appendChild(option);
-        });
     }
 
     function renderTopicsList() {
@@ -759,11 +743,6 @@ document.addEventListener('DOMContentLoaded', () => {
         versionHistory.classList.add('hidden');
     });
 
-    topicSelector.addEventListener('change', (e) => {
-        state.currentTopicId = e.target.value;
-        localStorage.setItem('selectedTopicId', state.currentTopicId);
-    });
-
     addTopicBtn.addEventListener('click', showAddTopicForm);
     cancelAddBtn.addEventListener('click', hideAddTopicForm);
 
@@ -811,6 +790,60 @@ document.addEventListener('DOMContentLoaded', () => {
     viewLastRefinedPromptBtn.addEventListener('click', showLastRefinedPrompt);
     lastRefinedPromptCloseBtn.addEventListener('click', () => {
         lastRefinedPromptModal.classList.add('hidden');
+    });
+
+    // --- Combobox Functions ---
+    function renderTopicDropdown(topics) {
+        topicDropdown.innerHTML = '';
+        if (topics.length === 0) {
+            topicDropdown.innerHTML = `<div class="p-2 text-gray-500">No topics found.</div>`;
+            return;
+        }
+        topics.forEach(topic => {
+            const item = document.createElement('div');
+            item.className = 'topic-item';
+            item.textContent = topic.name;
+            item.dataset.topicId = topic.id;
+            item.addEventListener('click', () => {
+                selectTopic(topic.id, topic.name);
+            });
+            topicDropdown.appendChild(item);
+        });
+    }
+
+    function selectTopic(topicId, topicName) {
+        state.currentTopicId = topicId;
+        localStorage.setItem('selectedTopicId', topicId);
+        topicSearch.value = topicName;
+        topicDropdown.classList.add('hidden');
+    }
+
+    // --- Event Listeners ---
+    topicSearch.addEventListener('focus', () => {
+        renderTopicDropdown(state.topics);
+        topicDropdown.classList.remove('hidden');
+    });
+
+    topicSearch.addEventListener('blur', () => {
+        // Delay hiding so that a click on a dropdown item can be registered
+        setTimeout(() => {
+            topicDropdown.classList.add('hidden');
+            // If the search input doesn't match a topic name, reset it
+            const currentTopic = state.topics.find(t => t.id === state.currentTopicId);
+            if (currentTopic) {
+                topicSearch.value = currentTopic.name;
+            } else {
+                topicSearch.value = '';
+            }
+        }, 200);
+    });
+
+    topicSearch.addEventListener('input', () => {
+        const searchTerm = topicSearch.value.toLowerCase();
+        const filteredTopics = state.topics.filter(topic =>
+            topic.name.toLowerCase().includes(searchTerm)
+        );
+        renderTopicDropdown(filteredTopics);
     });
 
     // --- Initialization ---
