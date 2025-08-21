@@ -135,20 +135,72 @@
     </main>
 
     <!-- Settings Modal -->
-    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
-        <div class="card rounded-lg p-8 w-full max-w-lg">
-            <h2 class="text-2xl font-bold mb-6 text-gray-800">Settings</h2>
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden overflow-y-auto">
+        <div class="card rounded-lg p-8 w-full max-w-4xl max-h-screen overflow-y-auto m-4">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800">Topics Management</h2>
 
-
-
+            <!-- Current Topic Selection -->
             <div class="mb-6">
-                <label for="master-prompt-input" class="block text-sm font-medium text-gray-700 mb-1">Master Prompt</label>
-                <textarea id="master-prompt-input" rows="10" class="w-full p-2 border rounded-md"></textarea>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Active Topic</label>
+                <select id="topic-selector" class="w-full p-2 border rounded-md">
+                    <option value="">Loading topics...</option>
+                </select>
             </div>
 
-            <div class="flex justify-end space-x-4">
-                <button id="settings-close-btn" class="px-4 py-2 rounded-md">Close</button>
-                <button id="settings-save-btn" class="btn-primary px-4 py-2 rounded-md">Save</button>
+            <!-- Topics List -->
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">All Topics</h3>
+                    <button id="add-topic-btn" class="btn-primary px-4 py-2 rounded-md text-sm">Add New Topic</button>
+                </div>
+                <div id="topics-list" class="space-y-4 max-h-60 overflow-y-auto">
+                    <!-- Topics will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Prompt Editor (shown when topic is selected) -->
+            <div id="prompt-editor" class="mb-6 hidden">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Edit Prompt for: <span id="current-topic-name" class="font-semibold"></span></label>
+                    <button id="view-versions-btn" class="text-blue-600 hover:text-blue-800 text-sm">View Version History</button>
+                </div>
+                <textarea id="prompt-textarea" rows="10" class="w-full p-2 border rounded-md mb-2"></textarea>
+                <div class="flex justify-end space-x-2">
+                    <button id="cancel-edit-btn" class="px-4 py-2 rounded-md border">Cancel</button>
+                    <button id="save-prompt-btn" class="btn-primary px-4 py-2 rounded-md">Save Changes</button>
+                </div>
+            </div>
+
+            <!-- Version History Modal Content (shown within settings modal) -->
+            <div id="version-history" class="hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">Version History for: <span id="version-topic-name"></span></h3>
+                    <button id="close-versions-btn" class="text-gray-500 hover:text-gray-700">&times;</button>
+                </div>
+                <div id="versions-list" class="space-y-2 max-h-40 overflow-y-auto mb-4">
+                    <!-- Versions will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Add Topic Form (hidden by default) -->
+            <div id="add-topic-form" class="mb-6 hidden">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Add New Topic</h3>
+                <div class="mb-4">
+                    <label for="new-topic-name" class="block text-sm font-medium text-gray-700 mb-1">Topic Name</label>
+                    <input type="text" id="new-topic-name" class="w-full p-2 border rounded-md" placeholder="e.g., Conjunctions, Verb + Preposition">
+                </div>
+                <div class="mb-4">
+                    <label for="new-topic-prompt" class="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
+                    <textarea id="new-topic-prompt" rows="8" class="w-full p-2 border rounded-md" placeholder="Enter the prompt for generating exercises..."></textarea>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button id="cancel-add-btn" class="px-4 py-2 rounded-md border">Cancel</button>
+                    <button id="save-topic-btn" class="btn-primary px-4 py-2 rounded-md">Create Topic</button>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button id="settings-close-btn" class="px-4 py-2 rounded-md border">Close</button>
             </div>
         </div>
     </div>

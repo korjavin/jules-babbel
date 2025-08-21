@@ -1,11 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
-
     // --- DOM Elements ---
     const settingsBtn = document.getElementById('settings-btn');
     const settingsModal = document.getElementById('settings-modal');
     const settingsCloseBtn = document.getElementById('settings-close-btn');
-    const settingsSaveBtn = document.getElementById('settings-save-btn');
-    const masterPromptInput = document.getElementById('master-prompt-input');
+    const topicSelector = document.getElementById('topic-selector');
 
     const generateBtn = document.getElementById('generate-btn');
     const hintBtn = document.getElementById('hint-btn');
@@ -25,18 +23,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const statsMistakesEl = document.getElementById('stats-mistakes');
     const statsHintsEl = document.getElementById('stats-hints');
 
+    // Topics management elements
+    const topicsList = document.getElementById('topics-list');
+    const addTopicBtn = document.getElementById('add-topic-btn');
+    const addTopicForm = document.getElementById('add-topic-form');
+    const newTopicName = document.getElementById('new-topic-name');
+    const newTopicPrompt = document.getElementById('new-topic-prompt');
+    const saveTopicBtn = document.getElementById('save-topic-btn');
+    const cancelAddBtn = document.getElementById('cancel-add-btn');
+
+    // Prompt editor elements
+    const promptEditor = document.getElementById('prompt-editor');
+    const currentTopicName = document.getElementById('current-topic-name');
+    const promptTextarea = document.getElementById('prompt-textarea');
+    const savePromptBtn = document.getElementById('save-prompt-btn');
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+    
+    // Version history elements
+    const viewVersionsBtn = document.getElementById('view-versions-btn');
+    const versionHistory = document.getElementById('version-history');
+    const versionTopicName = document.getElementById('version-topic-name');
+    const versionsList = document.getElementById('versions-list');
+    const closeVersionsBtn = document.getElementById('close-versions-btn');
+
     // --- Application State ---
     let state = {
-        masterPrompt: '',
+        currentTopicId: '',
+        topics: [],
         exercises: [],
         currentExerciseIndex: 0,
         userSentence: [],
-        isLocked: false, // To prevent clicks after a sentence is completed
+        isLocked: false,
         mistakes: 0,
         hintsUsed: 0,
         startTime: null,
         sessionTime: 0,
-        isSessionComplete: false
+        isSessionComplete: false,
+        editingTopicId: null
     };
 
     // --- Sample Data ---
@@ -53,71 +76,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 "english_hint": "She is going for a walk, although it is raining.",
                 "correct_german_sentence": "Sie geht spazieren, obwohl es regnet.",
                 "scrambled_words": ["obwohl", "es", "Sie", "geht", "spazieren,", "regnet"]
-            },
-            {
-                "conjunction_topic": "und",
-                "english_hint": "He is tired, but he is still working.",
-                "correct_german_sentence": "Er ist müde, aber er arbeitet noch.",
-                "scrambled_words": ["er", "arbeitet", "müde,", "aber", "ist", "noch", "Er"]
-            },
-            {
-                "conjunction_topic": "denn",
-                "english_hint": "I am eating an apple, because I am hungry.",
-                "correct_german_sentence": "Ich esse einen Apfel, denn ich habe Hunger.",
-                "scrambled_words": ["denn", "ich", "habe", "Ich", "esse", "einen", "Apfel,", "Hunger"]
-            },
-            {
-                "conjunction_topic": "wenn",
-                "english_hint": "If the weather is nice, we will go to the park.",
-                "correct_german_sentence": "Wenn das Wetter schön ist, gehen wir in den Park.",
-                "scrambled_words": ["in", "den", "Park", "wir", "gehen", "schön", "ist,", "Wenn", "das", "Wetter"]
-            },
-            {
-                "conjunction_topic": "dass",
-                "english_hint": "I hope that you are well.",
-                "correct_german_sentence": "Ich hoffe, dass es dir gut geht.",
-                "scrambled_words": ["dir", "gut", "es", "geht", "dass", "Ich", "hoffe,"]
-            },
-            {
-                "conjunction_topic": "sondern",
-                "english_hint": "He doesn't drive a car, but rather a motorcycle.",
-                "correct_german_sentence": "Er fährt kein Auto, sondern ein Motorrad.",
-                "scrambled_words": ["sondern", "ein", "Motorrad", "Er", "fährt", "kein", "Auto,"]
             }
         ]
     };
 
-    const defaultMasterPrompt = `You are an expert German language tutor creating B1-level grammar exercises. Your task is to generate a JSON object containing unique sentences focused on German conjunctions.
-
-Please adhere to the following rules:
-1.  **Sentence Structure:** Each sentence must correctly use a German conjunction. Include a mix of coordinating and subordinating conjunctions from the provided list.
-2.  **Vocabulary:** Use common B1-level vocabulary.
-3.  **Clarity:** The English hint must be a natural and accurate translation of the German sentence.
-Conjunction List: weil, obwohl, damit, wenn, dass, als, bevor, nachdem, ob, seit, und, oder, aber, denn, sondern.
-
-Return ONLY the JSON object, with no other text or explanations. The JSON object must validate against this schema:
-{
-  "type": "object",
-  "properties": {
-    "exercises": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "conjunction_topic": { "type": "string" },
-          "english_hint": { "type": "string" },
-          "correct_german_sentence": { "type": "string" }
-        },
-        "required": ["conjunction_topic", "english_hint", "correct_german_sentence"]
-      },
-      "minItems": 1
-    }
-  },
-  "required": ["exercises"]
-}`;
-
-    // --- Functions ---
-
+    // --- Helper Functions ---
     function getHotkey(index) {
         if (index < 9) {
             return (index + 1).toString(); // 1-9
@@ -143,6 +106,12 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         }
     }
 
+    function updateStats() {
+        statsMistakesEl.textContent = `Mistakes: ${state.mistakes}`;
+        statsHintsEl.textContent = `Hints Used: ${state.hintsUsed}`;
+    }
+
+    // --- Exercise Rendering and Logic ---
     function renderExercise() {
         state.isLocked = false;
         state.userSentence = [];
@@ -159,7 +128,6 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         emptyStateContainer.classList.add('hidden');
         exerciseCounter.classList.remove('hidden');
         hintBtn.classList.remove('hidden');
-
 
         const exercise = state.exercises[state.currentExerciseIndex];
 
@@ -180,248 +148,216 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             [wordsToDisplay[i], wordsToDisplay[j]] = [wordsToDisplay[j], wordsToDisplay[i]];
         }
 
-        // Create and display word buttons with hotkeys (excluding punctuation)
+        // Create and display word buttons with hotkeys
         wordsToDisplay.forEach((word, index) => {
             const button = document.createElement('button');
             const hotkey = getHotkey(index);
             
-            // Create hotkey indicator
             const hotkeySpan = document.createElement('span');
             hotkeySpan.textContent = hotkey;
             hotkeySpan.className = 'hotkey-indicator';
             
-            // Create word span
             const wordSpan = document.createElement('span');
             wordSpan.textContent = word;
             
-            // Append both to button
             button.appendChild(hotkeySpan);
             button.appendChild(wordSpan);
             
-            button.className = 'btn-word px-4 py-2 rounded-md shadow-sm relative';
+            button.className = 'btn-word px-4 py-2 rounded-md font-medium';
             button.dataset.hotkey = hotkey;
-            button.addEventListener('click', handleWordClick);
+            button.dataset.word = word;
+            
+            button.addEventListener('click', () => handleWordClick(word, button));
+            
             scrambledWordsContainer.appendChild(button);
         });
     }
 
-    function handleWordClick(event) {
+    function handleWordClick(word, button) {
         if (state.isLocked) return;
 
-        const button = event.target.closest('.btn-word');
-        const clickedWord = button.querySelector('span:last-child').textContent;
         const exercise = state.exercises[state.currentExerciseIndex];
-        const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
         
-        // Find the next non-punctuation word that should be selected
-        let nextCorrectWordIndex = state.userSentence.length;
-        while (nextCorrectWordIndex < correctWordArray.length && isPunctuation(correctWordArray[nextCorrectWordIndex])) {
-            nextCorrectWordIndex++;
-        }
-        const nextCorrectWord = correctWordArray[nextCorrectWordIndex];
+        state.userSentence.push(word);
+        addPunctuationIfNeeded(exercise, state.userSentence);
 
-        if (clickedWord === nextCorrectWord) {
-            // Correct word - add it and any punctuation that should come before it
-            state.userSentence.push(clickedWord);
-            addPunctuationIfNeeded(exercise, state.userSentence);
-            updateConstructedSentence();
-            button.classList.add('hidden'); // Hide the button
+        // Hide the clicked button
+        button.classList.add('hidden');
 
-            if (state.userSentence.length === correctWordArray.length) {
-                // Sentence complete
-                handleSentenceCompletion();
-            }
-        } else {
-            // Incorrect word
-            state.mistakes++;
-            updateStats();
-            button.classList.add('incorrect-answer-feedback');
-            setTimeout(() => {
-                button.classList.remove('incorrect-answer-feedback');
-            }, 500);
-        }
-    }
-
-    function updateConstructedSentence() {
+        // Update constructed sentence display
         constructedSentenceEl.innerHTML = '';
         answerPrompt.classList.add('hidden');
+        
         state.userSentence.forEach(word => {
-            const wordEl = document.createElement('span');
-            wordEl.textContent = word;
-            wordEl.className = 'bg-green-100 text-green-800 px-3 py-1 rounded-md';
-            constructedSentenceEl.appendChild(wordEl);
+            const span = document.createElement('span');
+            span.textContent = word;
+            span.className = 'px-2 py-1 bg-gray-100 rounded mr-1';
+            constructedSentenceEl.appendChild(span);
         });
+
+        // Check if sentence is complete
+        const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
+        
+        if (state.userSentence.length === correctWordArray.length) {
+            handleSentenceCompletion(exercise, correctWordArray);
+        }
     }
 
-    function handleSentenceCompletion() {
+    function handleSentenceCompletion(exercise, correctWordArray) {
         state.isLocked = true;
-        const exercise = state.exercises[state.currentExerciseIndex];
-        correctSentenceDisplay.textContent = `Correct! ${exercise.correct_german_sentence}`;
-
-        console.log(`Exercise ${state.currentExerciseIndex + 1} of ${state.exercises.length} completed`);
+        const isCorrect = state.userSentence.join(' ') === correctWordArray.join(' ');
         
-        // Check if this was the last exercise
-        if (state.currentExerciseIndex >= state.exercises.length - 1) {
-            console.log('Last exercise completed, showing statistics page');
-            // Session complete - calculate final time and show statistics
-            if (state.startTime) {
-                state.sessionTime = Date.now() - state.startTime;
-            } else {
-                state.sessionTime = 0; // Fallback if startTime wasn't set
-            }
-            state.isSessionComplete = true;
+        if (isCorrect) {
+            correctSentenceDisplay.textContent = `Correct! "${exercise.correct_german_sentence}"`;
             
             setTimeout(() => {
-                showStatisticsPage();
-            }, 3000);
+                if (state.currentExerciseIndex < state.exercises.length - 1) {
+                    state.currentExerciseIndex++;
+                    renderExercise();
+                } else {
+                    showStatisticsPage();
+                }
+            }, 2000);
         } else {
-            // Move to next exercise
-            console.log('Moving to next exercise');
+            state.mistakes++;
+            updateStats();
+            
+            // Show incorrect feedback
+            const wrongWords = scrambledWordsContainer.querySelectorAll('.btn-word.hidden');
+            wrongWords.forEach(btn => {
+                btn.classList.add('incorrect-answer-feedback');
+                setTimeout(() => {
+                    btn.classList.remove('incorrect-answer-feedback');
+                }, 500);
+            });
+            
+            // Reset for another try
             setTimeout(() => {
-                state.currentExerciseIndex++;
+                state.userSentence = [];
                 renderExercise();
-            }, 3000);
+            }, 1500);
         }
     }
 
     function handleHintClick() {
-        if (state.isLocked) return;
+        if (state.isLocked || state.exercises.length === 0) return;
 
         const exercise = state.exercises[state.currentExerciseIndex];
         const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
+        const nonPunctuationWords = correctWordArray.filter(token => !isPunctuation(token));
         
-        // Find the next non-punctuation word that should be selected
-        let nextCorrectWordIndex = state.userSentence.length;
-        while (nextCorrectWordIndex < correctWordArray.length && isPunctuation(correctWordArray[nextCorrectWordIndex])) {
-            nextCorrectWordIndex++;
-        }
-        const nextCorrectWord = correctWordArray[nextCorrectWordIndex];
-
-        if (!nextCorrectWord) return; // All words have been selected
-
-        state.hintsUsed++;
-        updateStats();
-
-        const wordButtons = scrambledWordsContainer.querySelectorAll('.btn-word:not(.hidden)');
-        for (const button of wordButtons) {
-            const buttonWord = button.querySelector('span:last-child').textContent;
-            if (buttonWord === nextCorrectWord) {
-                button.classList.add('hint-word');
-                setTimeout(() => {
-                    button.classList.remove('hint-word');
-                }, 800); // Highlight for 800ms
-                break;
+        if (state.userSentence.length < nonPunctuationWords.length) {
+            const nextCorrectWord = nonPunctuationWords[state.userSentence.length];
+            const availableButtons = scrambledWordsContainer.querySelectorAll('.btn-word:not(.hidden)');
+            
+            for (const button of availableButtons) {
+                if (button.dataset.word === nextCorrectWord) {
+                    button.classList.add('hint-word');
+                    state.hintsUsed++;
+                    updateStats();
+                    
+                    setTimeout(() => {
+                        button.classList.remove('hint-word');
+                    }, 2000);
+                    break;
+                }
             }
         }
     }
 
-    function updateStats() {
-        statsMistakesEl.textContent = `Mistakes: ${state.mistakes}`;
-        statsHintsEl.textContent = `Hints Used: ${state.hintsUsed}`;
-    }
-
-    function formatTime(milliseconds) {
-        const totalSeconds = Math.floor(milliseconds / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    }
-
     function showStatisticsPage() {
-        console.log('showStatisticsPage called');
-        // Hide main exercise content
-        document.getElementById('exercise-container').classList.add('hidden');
-        document.querySelector('.text-center').classList.add('hidden'); // Hide hint and generate buttons
-        
-        // Create and show statistics container
-        const statsContainer = document.createElement('div');
-        statsContainer.id = 'statistics-container';
-        statsContainer.className = 'card rounded-lg p-6 md:p-8 mb-8 text-center';
+        state.isSessionComplete = true;
+        const endTime = Date.now();
+        state.sessionTime = Math.floor((endTime - state.startTime) / 1000);
         
         const accuracy = state.exercises.length > 0 ? 
-            Math.round(((state.exercises.length - state.mistakes) / state.exercises.length) * 100) : 100;
+            Math.round(((state.exercises.length - state.mistakes) / state.exercises.length) * 100) : 0;
+        const avgTimePerExercise = state.exercises.length > 0 ? 
+            (state.sessionTime / state.exercises.length).toFixed(1) : 0;
+
+        // Create statistics display
+        const statsContainer = document.createElement('div');
+        statsContainer.id = 'statistics-container';
+        statsContainer.className = 'card rounded-lg p-8 text-center';
         
         statsContainer.innerHTML = `
-            <h2 class="text-3xl font-bold text-gray-800 mb-6">🎉 Session Complete!</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div class="bg-blue-50 p-4 rounded-lg">
-                    <div class="text-2xl font-bold text-blue-600">${state.exercises.length}</div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">Session Complete! 🎉</h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-[#A58D78]">${state.exercises.length}</div>
                     <div class="text-gray-600">Exercises Completed</div>
                 </div>
-                <div class="bg-red-50 p-4 rounded-lg">
-                    <div class="text-2xl font-bold text-red-600">${state.mistakes}</div>
-                    <div class="text-gray-600">Mistakes Made</div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-[#A58D78]">${state.mistakes}</div>
+                    <div class="text-gray-600">Total Mistakes</div>
                 </div>
-                <div class="bg-yellow-50 p-4 rounded-lg">
-                    <div class="text-2xl font-bold text-yellow-600">${state.hintsUsed}</div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-[#A58D78]">${state.hintsUsed}</div>
                     <div class="text-gray-600">Hints Used</div>
                 </div>
-                <div class="bg-green-50 p-4 rounded-lg">
-                    <div class="text-2xl font-bold text-green-600">${accuracy}%</div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-[#A58D78]">${accuracy}%</div>
                     <div class="text-gray-600">Accuracy</div>
                 </div>
-                <div class="bg-purple-50 p-4 rounded-lg">
-                    <div class="text-2xl font-bold text-purple-600">${formatTime(state.sessionTime)}</div>
-                    <div class="text-gray-600">Time Spent</div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-[#A58D78]">${state.sessionTime}s</div>
+                    <div class="text-gray-600">Total Time</div>
                 </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <div class="text-2xl font-bold text-gray-600">${Math.round(state.sessionTime / state.exercises.length / 1000)}s</div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-[#A58D78]">${avgTimePerExercise}s</div>
                     <div class="text-gray-600">Avg per Exercise</div>
                 </div>
             </div>
-            <div class="space-y-4">
-                <button id="new-session-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Start New Session</button>
-                <button id="same-exercises-btn" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold text-lg">Practice Same Exercises</button>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <button id="new-session-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">
+                    Start New Session
+                </button>
+                <button id="same-exercises-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">
+                    Practice Same Exercises
+                </button>
             </div>
         `;
-        
-        document.getElementById('app').appendChild(statsContainer);
-        
-        // Add event listeners for the new buttons
-        document.getElementById('new-session-btn').addEventListener('click', () => {
-            resetForNewSession();
-            fetchExercises();
-        });
-        
-        document.getElementById('same-exercises-btn').addEventListener('click', () => {
-            resetForSameExercises();
-        });
+
+        // Replace exercise content with statistics
+        document.getElementById('exercise-container').classList.add('hidden');
+        document.querySelector('.text-center').classList.add('hidden');
+        document.querySelector('main .max-w-3xl').appendChild(statsContainer);
+
+        // Add event listeners for the buttons
+        document.getElementById('new-session-btn').addEventListener('click', resetForNewSession);
+        document.getElementById('same-exercises-btn').addEventListener('click', resetForSameExercises);
     }
 
     function resetForNewSession() {
-        // Remove statistics container
         const statsContainer = document.getElementById('statistics-container');
         if (statsContainer) {
             statsContainer.remove();
         }
         
-        // Show main content
         document.getElementById('exercise-container').classList.remove('hidden');
         document.querySelector('.text-center').classList.remove('hidden');
         
-        // Reset state for new session
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
         state.hintsUsed = 0;
         state.sessionTime = 0;
         state.isSessionComplete = false;
         state.startTime = null;
+        state.exercises = [];
         
         updateStats();
+        renderExercise(); // Show empty state
     }
 
     function resetForSameExercises() {
-        // Remove statistics container
         const statsContainer = document.getElementById('statistics-container');
         if (statsContainer) {
             statsContainer.remove();
         }
         
-        // Show main content
         document.getElementById('exercise-container').classList.remove('hidden');
         document.querySelector('.text-center').classList.remove('hidden');
         
-        // Reset state but keep same exercises
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
         state.hintsUsed = 0;
@@ -447,37 +383,160 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         }
     }
 
-    // --- Settings Functions ---
-    function openSettingsModal() {
-        masterPromptInput.value = state.masterPrompt;
-        settingsModal.classList.remove('hidden');
-    }
-
-    function closeSettingsModal() {
-        settingsModal.classList.add('hidden');
-    }
-
-    function saveSettings() {
-        state.masterPrompt = masterPromptInput.value.trim();
-
-        localStorage.setItem('srsGermanMasterPrompt', state.masterPrompt);
-
-        alert('Settings saved!');
-        closeSettingsModal();
-    }
-
-    function loadSettings() {
-        const savedMasterPrompt = localStorage.getItem('srsGermanMasterPrompt');
-
-        if (savedMasterPrompt) {
-            state.masterPrompt = savedMasterPrompt;
-        } else {
-            state.masterPrompt = defaultMasterPrompt;
+    // --- Topics API Functions ---
+    async function loadTopics() {
+        try {
+            const response = await fetch('/api/topics');
+            if (!response.ok) throw new Error('Failed to load topics');
+            
+            const data = await response.json();
+            state.topics = data.topics || [];
+            
+            populateTopicSelector();
+            renderTopicsList();
+            
+            // Load selected topic from localStorage or use first available
+            const savedTopicId = localStorage.getItem('selectedTopicId');
+            if (savedTopicId && state.topics.find(t => t.id === savedTopicId)) {
+                state.currentTopicId = savedTopicId;
+            } else if (state.topics.length > 0) {
+                state.currentTopicId = state.topics[0].id;
+            }
+            
+            topicSelector.value = state.currentTopicId;
+            
+        } catch (error) {
+            console.error('Error loading topics:', error);
+            alert('Failed to load topics. Please refresh the page.');
         }
     }
 
-    // --- API Functions ---
+    function populateTopicSelector() {
+        topicSelector.innerHTML = '';
+        
+        if (state.topics.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No topics available';
+            topicSelector.appendChild(option);
+            return;
+        }
+        
+        state.topics.forEach(topic => {
+            const option = document.createElement('option');
+            option.value = topic.id;
+            option.textContent = topic.name;
+            topicSelector.appendChild(option);
+        });
+    }
+
+    function renderTopicsList() {
+        topicsList.innerHTML = '';
+        
+        state.topics.forEach(topic => {
+            const topicDiv = document.createElement('div');
+            topicDiv.className = 'flex justify-between items-center p-3 border rounded-md bg-gray-50';
+            
+            topicDiv.innerHTML = `
+                <div>
+                    <div class="font-medium">${topic.name}</div>
+                    <div class="text-sm text-gray-500">Created: ${new Date(topic.created_at).toLocaleDateString()}</div>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="edit-topic-btn text-blue-600 hover:text-blue-800 text-sm" data-topic-id="${topic.id}">Edit</button>
+                    <button class="delete-topic-btn text-red-600 hover:text-red-800 text-sm" data-topic-id="${topic.id}">Delete</button>
+                </div>
+            `;
+            
+            topicsList.appendChild(topicDiv);
+        });
+        
+        // Add event listeners for edit and delete buttons
+        topicsList.querySelectorAll('.edit-topic-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const topicId = e.target.dataset.topicId;
+                showPromptEditor(topicId);
+            });
+        });
+        
+        topicsList.querySelectorAll('.delete-topic-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const topicId = e.target.dataset.topicId;
+                deleteTopic(topicId);
+            });
+        });
+    }
+
+    async function createTopic(name, prompt) {
+        try {
+            const response = await fetch('/api/topics', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, prompt })
+            });
+            
+            if (!response.ok) throw new Error('Failed to create topic');
+            
+            await loadTopics(); // Refresh the topics list
+            hideAddTopicForm();
+            
+        } catch (error) {
+            console.error('Error creating topic:', error);
+            alert('Failed to create topic. Please try again.');
+        }
+    }
+
+    async function deleteTopic(topicId) {
+        if (!confirm('Are you sure you want to delete this topic? This action cannot be undone.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/topics/${topicId}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) throw new Error('Failed to delete topic');
+            
+            // If this was the selected topic, clear selection
+            if (state.currentTopicId === topicId) {
+                state.currentTopicId = '';
+                localStorage.removeItem('selectedTopicId');
+            }
+            
+            await loadTopics(); // Refresh the topics list
+            
+        } catch (error) {
+            console.error('Error deleting topic:', error);
+            alert('Failed to delete topic. Please try again.');
+        }
+    }
+
+    async function updateTopicPrompt(topicId, prompt) {
+        try {
+            const response = await fetch(`/api/topics/${topicId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+            
+            if (!response.ok) throw new Error('Failed to update prompt');
+            
+            await loadTopics(); // Refresh the topics list
+            hidePromptEditor();
+            
+        } catch (error) {
+            console.error('Error updating prompt:', error);
+            alert('Failed to update prompt. Please try again.');
+        }
+    }
+
     async function fetchExercises() {
+        if (!state.currentTopicId) {
+            alert('Please select a topic first.');
+            return;
+        }
+
         loadingSpinner.classList.remove('hidden');
         exerciseContent.classList.add('hidden');
         generateBtn.disabled = true;
@@ -489,7 +548,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    master_prompt: state.masterPrompt
+                    topic_id: state.currentTopicId
                 })
             });
 
@@ -508,7 +567,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
                 state.hintsUsed = 0;
                 state.sessionTime = 0;
                 state.isSessionComplete = false;
-                state.startTime = Date.now(); // Start timing the session
+                state.startTime = Date.now();
                 updateStats();
                 renderExercise();
             } else {
@@ -518,39 +577,188 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         } catch (error) {
             console.error('Error fetching exercises:', error);
             alert(`Failed to fetch new exercises. Please check your API key and network connection. \nError: ${error.message}`);
-            renderExercise(); // Re-render to show empty state or old exercises
+            renderExercise();
         } finally {
             loadingSpinner.classList.add('hidden');
             generateBtn.disabled = false;
         }
     }
 
+    // --- UI Helper Functions ---
+    function showAddTopicForm() {
+        addTopicForm.classList.remove('hidden');
+        newTopicName.value = '';
+        newTopicPrompt.value = '';
+        newTopicName.focus();
+    }
+
+    function hideAddTopicForm() {
+        addTopicForm.classList.add('hidden');
+    }
+
+    function showPromptEditor(topicId) {
+        const topic = state.topics.find(t => t.id === topicId);
+        if (!topic) return;
+        
+        state.editingTopicId = topicId;
+        currentTopicName.textContent = topic.name;
+        promptTextarea.value = topic.prompt;
+        promptEditor.classList.remove('hidden');
+        versionHistory.classList.add('hidden');
+    }
+
+    function hidePromptEditor() {
+        promptEditor.classList.add('hidden');
+        state.editingTopicId = null;
+    }
+
+    async function showVersionHistory(topicId) {
+        try {
+            const response = await fetch(`/api/versions/${topicId}`);
+            if (!response.ok) throw new Error('Failed to load versions');
+            
+            const data = await response.json();
+            const versions = data.versions || [];
+            
+            const topic = state.topics.find(t => t.id === topicId);
+            versionTopicName.textContent = topic ? topic.name : 'Unknown Topic';
+            
+            versionsList.innerHTML = '';
+            
+            versions.reverse().forEach(version => {
+                const versionDiv = document.createElement('div');
+                versionDiv.className = 'flex justify-between items-center p-2 border rounded text-sm';
+                
+                versionDiv.innerHTML = `
+                    <div>
+                        <div class="font-medium">Version ${version.version}</div>
+                        <div class="text-gray-500">${new Date(version.created_at).toLocaleString()}</div>
+                    </div>
+                    <button class="restore-version-btn text-blue-600 hover:text-blue-800" 
+                            data-topic-id="${topicId}" data-version-id="${version.id}">
+                        Restore
+                    </button>
+                `;
+                
+                versionsList.appendChild(versionDiv);
+            });
+            
+            // Add event listeners for restore buttons
+            versionsList.querySelectorAll('.restore-version-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const topicId = e.target.dataset.topicId;
+                    const versionId = e.target.dataset.versionId;
+                    await restoreVersion(topicId, versionId);
+                });
+            });
+            
+            promptEditor.classList.add('hidden');
+            versionHistory.classList.remove('hidden');
+            
+        } catch (error) {
+            console.error('Error loading version history:', error);
+            alert('Failed to load version history.');
+        }
+    }
+
+    async function restoreVersion(topicId, versionId) {
+        if (!confirm('Are you sure you want to restore this version? This will create a new version with this content.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/versions/${topicId}/restore/${versionId}`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) throw new Error('Failed to restore version');
+            
+            await loadTopics(); // Refresh topics
+            versionHistory.classList.add('hidden');
+            alert('Version restored successfully!');
+            
+        } catch (error) {
+            console.error('Error restoring version:', error);
+            alert('Failed to restore version.');
+        }
+    }
+
     // --- Event Listeners ---
-    settingsBtn.addEventListener('click', openSettingsModal);
-    settingsCloseBtn.addEventListener('click', closeSettingsModal);
-    settingsSaveBtn.addEventListener('click', saveSettings);
+    settingsBtn.addEventListener('click', () => {
+        loadTopics(); // Refresh topics when opening settings
+        settingsModal.classList.remove('hidden');
+    });
+
+    settingsCloseBtn.addEventListener('click', () => {
+        settingsModal.classList.add('hidden');
+        hideAddTopicForm();
+        hidePromptEditor();
+        versionHistory.classList.add('hidden');
+    });
+
+    topicSelector.addEventListener('change', (e) => {
+        state.currentTopicId = e.target.value;
+        localStorage.setItem('selectedTopicId', state.currentTopicId);
+    });
+
+    addTopicBtn.addEventListener('click', showAddTopicForm);
+    cancelAddBtn.addEventListener('click', hideAddTopicForm);
+
+    saveTopicBtn.addEventListener('click', () => {
+        const name = newTopicName.value.trim();
+        const prompt = newTopicPrompt.value.trim();
+        
+        if (!name || !prompt) {
+            alert('Please provide both a name and a prompt.');
+            return;
+        }
+        
+        createTopic(name, prompt);
+    });
+
+    cancelEditBtn.addEventListener('click', hidePromptEditor);
+
+    savePromptBtn.addEventListener('click', () => {
+        const prompt = promptTextarea.value.trim();
+        
+        if (!prompt) {
+            alert('Prompt cannot be empty.');
+            return;
+        }
+        
+        updateTopicPrompt(state.editingTopicId, prompt);
+    });
+
+    viewVersionsBtn.addEventListener('click', () => {
+        if (state.editingTopicId) {
+            showVersionHistory(state.editingTopicId);
+        }
+    });
+
+    closeVersionsBtn.addEventListener('click', () => {
+        versionHistory.classList.add('hidden');
+        promptEditor.classList.remove('hidden');
+    });
+
     generateBtn.addEventListener('click', fetchExercises);
     hintBtn.addEventListener('click', handleHintClick);
     document.addEventListener('keydown', handleKeyPress);
 
-
     // --- Initialization ---
     function init() {
-        loadSettings();
+        loadTopics();
         
-        // For testing purposes, load sample exercises
-        // Comment out this section if you want to start with no exercises
+        // Start with sample exercises for testing
         state.exercises = sampleExercises.exercises;
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
         state.hintsUsed = 0;
         state.sessionTime = 0;
         state.isSessionComplete = false;
-        state.startTime = Date.now(); // Start timing for sample exercises too
+        state.startTime = Date.now();
         
-        renderExercise();
         updateStats();
-        console.log("App initialized with sample data.");
+        renderExercise();
     }
 
     init();
