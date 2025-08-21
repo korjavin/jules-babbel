@@ -258,10 +258,17 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         const exercise = state.exercises[state.currentExerciseIndex];
         correctSentenceDisplay.textContent = `Correct! ${exercise.correct_german_sentence}`;
 
+        console.log(`Exercise ${state.currentExerciseIndex + 1} of ${state.exercises.length} completed`);
+        
         // Check if this was the last exercise
         if (state.currentExerciseIndex >= state.exercises.length - 1) {
+            console.log('Last exercise completed, showing statistics page');
             // Session complete - calculate final time and show statistics
-            state.sessionTime = Date.now() - state.startTime;
+            if (state.startTime) {
+                state.sessionTime = Date.now() - state.startTime;
+            } else {
+                state.sessionTime = 0; // Fallback if startTime wasn't set
+            }
             state.isSessionComplete = true;
             
             setTimeout(() => {
@@ -269,6 +276,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
             }, 3000);
         } else {
             // Move to next exercise
+            console.log('Moving to next exercise');
             setTimeout(() => {
                 state.currentExerciseIndex++;
                 renderExercise();
@@ -320,6 +328,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     }
 
     function showStatisticsPage() {
+        console.log('showStatisticsPage called');
         // Hide main exercise content
         document.getElementById('exercise-container').classList.add('hidden');
         document.querySelector('.text-center').classList.add('hidden'); // Hide hint and generate buttons
@@ -528,11 +537,19 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     // --- Initialization ---
     function init() {
         loadSettings();
-        state.exercises = [];
+        
+        // For testing purposes, load sample exercises
+        // Comment out this section if you want to start with no exercises
+        state.exercises = sampleExercises.exercises;
         state.currentExerciseIndex = 0;
+        state.mistakes = 0;
+        state.hintsUsed = 0;
+        state.sessionTime = 0;
+        state.isSessionComplete = false;
+        state.startTime = Date.now(); // Start timing for sample exercises too
+        
         renderExercise();
-
-        updateStats(); // Initialize stats display
+        updateStats();
         console.log("App initialized with sample data.");
     }
 
