@@ -213,6 +213,15 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
+func getFilePath(filename string) string {
+	// Check if running in Docker (files in static/ directory)
+	if _, err := os.Stat("static/" + filename); err == nil {
+		return "static/" + filename
+	}
+	// Otherwise use current directory
+	return filename
+}
+
 func handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -220,7 +229,8 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Read the HTML file
-	content, err := os.ReadFile("index.html")
+	filePath := getFilePath("index.html")
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
@@ -242,7 +252,8 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func handleJS(w http.ResponseWriter, r *http.Request) {
 	// Read the JS file
-	content, err := os.ReadFile("app.js")
+	filePath := getFilePath("app.js")
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
