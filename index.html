@@ -74,14 +74,28 @@
         .btn-word {
             position: relative;
         }
+        #topic-dropdown .topic-item {
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+        }
+        #topic-dropdown .topic-item:hover {
+            background-color: #F7F1EA;
+        }
     </style>
 </head>
 <body class="antialiased">
 
     <header class="bg-white shadow-sm">
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <div class="text-2xl font-bold text-gray-800">
-                <span class="text-[#A58D78]">SRS</span> | German Grammar
+            <div class="flex items-center space-x-6">
+                <h1 class="text-2xl font-bold text-gray-800">German Grammar Trainer</h1>
+                <div id="topic-selector-container" class="relative">
+                    <label for="topic-search" class="sr-only">Select Topic</label>
+                    <input type="text" id="topic-search" class="w-64 p-2 border rounded-md" placeholder="Search and select a topic...">
+                    <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
+                        <!-- Topic items will be dynamically inserted here -->
+                    </div>
+                </div>
             </div>
             <div class="flex items-center space-x-6">
                 <div id="stats-mistakes" class="text-lg">Mistakes: 0</div>
@@ -140,13 +154,7 @@
         <div class="card rounded-lg p-8 w-full max-w-4xl max-h-screen overflow-y-auto m-4">
             <h2 class="text-2xl font-bold mb-6 text-gray-800">Topics Management</h2>
 
-            <!-- Current Topic Selection -->
-            <div class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Active Topic</label>
-                <select id="topic-selector" class="w-full p-2 border rounded-md">
-                    <option value="">Loading topics...</option>
-                </select>
-            </div>
+            <!-- Current Topic Selection (removed, now in header) -->
 
             <!-- Observability -->
             <div class="mb-6 pt-4 border-t">
