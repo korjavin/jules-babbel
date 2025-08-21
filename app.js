@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateBtn = document.getElementById('generate-btn');
     const hintBtn = document.getElementById('hint-btn');
     const loadingSpinner = document.getElementById('loading-spinner');
+    const timer = document.getElementById('timer');
     const exerciseContent = document.getElementById('exercise-content');
 
     const englishHintEl = document.getElementById('english-hint');
@@ -65,7 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
         startTime: null,
         sessionTime: 0,
         isSessionComplete: false,
-        editingTopicId: null
+        editingTopicId: null,
+        timer: 30,
+        timerInterval: null
     };
 
     // --- Sample Data ---
@@ -575,6 +578,15 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingSpinner.classList.remove('hidden');
         exerciseContent.classList.add('hidden');
         generateBtn.disabled = true;
+        state.timer = 30;
+        timer.textContent = state.timer;
+        state.timerInterval = setInterval(() => {
+            state.timer--;
+            timer.textContent = state.timer;
+            if (state.timer === 0) {
+                clearInterval(state.timerInterval);
+            }
+        }, 1000);
 
         try {
             const response = await fetch('/api/generate', {
@@ -622,6 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderExercise();
         } finally {
             loadingSpinner.classList.add('hidden');
+            clearInterval(state.timerInterval);
             // Keep button disabled and re-enable after 5 seconds
             setTimeout(() => {
                 generateBtn.disabled = false;
