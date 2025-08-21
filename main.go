@@ -45,7 +45,8 @@ type TopicRequest struct {
 	Prompt string `json:"prompt"`
 }
 
-type UpdatePromptRequest struct {
+type UpdateTopicRequest struct {
+	Name   string `json:"name"`
 	Prompt string `json:"prompt"`
 }
 
@@ -84,7 +85,12 @@ var (
 	// Table names
 	topicsTableName   = "Topics"
 	versionsTableName = "PromptVersions"
+
+	// For observability
+	lastRefinedPrompt      string
+	lastRefinedPromptMutex sync.RWMutex
 )
+
 
 // Rate limiting
 var (
@@ -105,6 +111,22 @@ func getClientIP(r *http.Request) string {
 	ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 	return ip
 }
+
+const metaPrompt = `You are a prompt engineering assistant. Your task is to refine the following user-provided prompt to improve the variety and creativity of the AI's output for generating language exercises.
+
+**Refinement Rules:**
+1.  **Do Not Change the JSON Schema:** The core instructions for the JSON output format and the schema definition must remain untouched. The refined prompt must still produce a valid JSON object.
+2.  **Enhance Instructions:** Rephrase the instructions to encourage more diverse and less repetitive sentences. Add suggestions for using a wider range of vocabulary or sentence structures.
+3.  **Add Examples:** Include one or two new, concrete examples of the desired output format within the prompt. This helps the model better understand the task.
+4.  **Maintain Core Task:** The fundamental goal of the prompt (e.g., creating German conjunction exercises) must be preserved.
+5.  **Output:** Your final output should be ONLY the refined prompt, with no extra text, explanations, or markdown formatting around it.
+
+Here is the prompt to refine:
+---
+%s
+---
+`
+
 
 
 // Initialize Airtable client
@@ -408,16 +430,16 @@ func getTopic(topicID string) (*Topic, error) {
 	return topic, nil
 }
 
-func updateTopic(topicID, prompt string) (*Topic, error) {
+func updateTopic(topicID, name, prompt string) (*Topic, error) {
 	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
 	now := time.Now().Format(time.RFC3339)
-	
+
 	// First add the new version
 	err := addPromptVersion(topicID, prompt)
 	if err != nil {
 		log.Printf("Warning: Failed to create version: %v", err)
 	}
-	
+
 	// Clean up old versions (keep only last 10)
 	versions, err := getVersions(topicID)
 	if err == nil && len(versions) > 10 {
@@ -429,36 +451,39 @@ func updateTopic(topicID, prompt string) (*Topic, error) {
 		}
 		versionsTable.DeleteRecords(oldVersionIDs)
 	}
-	
-	// Update the topic
+
+	// Prepare fields for update
+	fields := map[string]any{
+		"Prompt":    prompt,
+		"UpdatedAt": now,
+	}
+	if name != "" {
+		fields["Name"] = name
+	}
+
 	records := &airtable.Records{
 		Records: []*airtable.Record{
 			{
-				ID: topicID,
-				Fields: map[string]any{
-					"Prompt":    prompt,
-					"UpdatedAt": now,
-				},
+				ID:     topicID,
+				Fields: fields,
 			},
 		},
 	}
-	
+
 	_, err = table.UpdateRecords(records)
 	if err != nil {
-		// If UpdatedAt field doesn't exist, try without it
 		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
 			log.Printf("UpdatedAt field not found, updating with minimal fields")
-			records.Records[0].Fields = map[string]any{
-				"Prompt": prompt,
-			}
+			delete(fields, "UpdatedAt")
+			records.Records[0].Fields = fields
 			_, err = table.UpdateRecords(records)
 		}
-		
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to update topic in Airtable: %v", err)
 		}
 	}
-	
+
 	return getTopic(topicID)
 }
 
@@ -668,6 +693,7 @@ func main() {
 	http.HandleFunc("/api/topics", handleTopics)
 	http.HandleFunc("/api/topics/", handleTopicByID)
 	http.HandleFunc("/api/versions/", handleVersions)
+	http.HandleFunc("/api/last-refined-prompt", handleGetLastRefinedPrompt)
 	
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -730,6 +756,68 @@ func handleJS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
 	
 	w.Write(content)
+}
+
+// refinePrompt takes a prompt and uses the meta-prompt to refine it.
+func refinePrompt(originalPrompt, apiKey, openaiURL, modelName string) (string, error) {
+	log.Println("Refining prompt...")
+
+	// 1. Create the request to refine the prompt
+	refineMessages := []Message{
+		{
+			Role:    "user",
+			Content: fmt.Sprintf(metaPrompt, originalPrompt),
+		},
+	}
+
+	// For refining, we expect a text response, not a JSON object
+	refineReq := OpenAIRequest{
+		Model:    modelName,
+		Messages: refineMessages,
+	}
+
+	reqBody, err := json.Marshal(refineReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to create refine request body: %w", err)
+	}
+
+	// 2. Make the request to the OpenAI API
+	client := &http.Client{}
+	apiReq, err := http.NewRequest("POST", openaiURL+"/chat/completions", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create API request for refining: %w", err)
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(apiReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to call OpenAI API for refining: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 3. Read and parse the response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read API response for refining: %w", err)
+	}
+
+	var openaiResp OpenAIResponse
+	if err := json.Unmarshal(respBody, &openaiResp); err != nil {
+		return "", fmt.Errorf("failed to parse API response for refining: %w", err)
+	}
+
+	if openaiResp.Error != nil {
+		return "", fmt.Errorf("API error during refining: %s", openaiResp.Error.Message)
+	}
+
+	if len(openaiResp.Choices) == 0 || openaiResp.Choices[0].Message.Content == "" {
+		return "", fmt.Errorf("received an empty response from the refining API")
+	}
+
+	refinedPrompt := openaiResp.Choices[0].Message.Content
+	log.Println("Successfully refined prompt.")
+	return refinedPrompt, nil
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
@@ -801,13 +889,26 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create OpenAI request
+	// Refine the prompt
+	finalPrompt, err := refinePrompt(topic.Prompt, apiKey, openaiURL, modelName)
+	if err != nil {
+		// If refining fails, log the error and fall back to the original prompt
+		log.Printf("Error refining prompt, falling back to original: %v", err)
+		finalPrompt = topic.Prompt
+	} else {
+		// Store the last successfully refined prompt for observability
+		lastRefinedPromptMutex.Lock()
+		lastRefinedPrompt = finalPrompt
+		lastRefinedPromptMutex.Unlock()
+	}
+
+	// Create OpenAI request with the (potentially refined) prompt
 	openaiReq := OpenAIRequest{
 		Model: modelName,
 		Messages: []Message{
 			{
 				Role:    "user",
-				Content: topic.Prompt,
+				Content: finalPrompt,
 			},
 		},
 	}
@@ -870,6 +971,27 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	w.Write(respBody)
+}
+
+func handleGetLastRefinedPrompt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	lastRefinedPromptMutex.RLock()
+	defer lastRefinedPromptMutex.RUnlock()
+
+	response := map[string]string{
+		"last_refined_prompt": lastRefinedPrompt,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // Handle topics CRUD operations
@@ -953,23 +1075,23 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(topic)
 
 	case http.MethodPut:
-		var req UpdatePromptRequest
+		var req UpdateTopicRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
-		
+
 		if req.Prompt == "" {
 			http.Error(w, "Prompt is required", http.StatusBadRequest)
 			return
 		}
-		
-		topic, err := updateTopic(topicID, req.Prompt)
+
+		topic, err := updateTopic(topicID, req.Name, req.Prompt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to update topic: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(topic)
 
@@ -1040,8 +1162,15 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
+		// Get the current topic name to preserve it
+		currentTopic, err := getTopic(topicID)
+		if err != nil {
+			http.Error(w, "Failed to get current topic", http.StatusNotFound)
+			return
+		}
+
 		// Update topic with restored prompt (this will automatically create a new version)
-		topic, err := updateTopic(topicID, versionToRestore.Prompt)
+		topic, err := updateTopic(topicID, currentTopic.Name, versionToRestore.Prompt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
 			return

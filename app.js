@@ -46,6 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const versionsList = document.getElementById('versions-list');
     const closeVersionsBtn = document.getElementById('close-versions-btn');
 
+    // Observability elements
+    const viewLastRefinedPromptBtn = document.getElementById('view-last-refined-prompt-btn');
+    const lastRefinedPromptModal = document.getElementById('last-refined-prompt-modal');
+    const lastRefinedPromptContent = document.getElementById('last-refined-prompt-content');
+    const lastRefinedPromptCloseBtn = document.getElementById('last-refined-prompt-close-btn');
+
     // --- Application State ---
     let state = {
         currentTopicId: '',
@@ -320,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Replace exercise content with statistics
         document.getElementById('exercise-container').classList.add('hidden');
-        document.querySelector('.text-center').classList.add('hidden');
+        document.getElementById('controls-container').classList.add('hidden');
         document.querySelector('main .max-w-3xl').appendChild(statsContainer);
 
         // Add event listeners for the buttons
@@ -335,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         document.getElementById('exercise-container').classList.remove('hidden');
-        document.querySelector('.text-center').classList.remove('hidden');
+        document.getElementById('controls-container').classList.remove('hidden');
         
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
@@ -356,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         document.getElementById('exercise-container').classList.remove('hidden');
-        document.querySelector('.text-center').classList.remove('hidden');
+        document.getElementById('controls-container').classList.remove('hidden');
         
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
@@ -512,12 +518,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function updateTopicPrompt(topicId, prompt) {
+    async function updateTopicPrompt(topicId, name, prompt) {
         try {
             const response = await fetch(`/api/topics/${topicId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
+                body: JSON.stringify({ name, prompt })
             });
             
             if (!response.ok) throw new Error('Failed to update prompt');
@@ -693,6 +699,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Observability Functions ---
+    async function showLastRefinedPrompt() {
+        try {
+            const response = await fetch('/api/last-refined-prompt');
+            if (!response.ok) throw new Error('Failed to fetch the last refined prompt.');
+
+            const data = await response.json();
+            const promptText = data.last_refined_prompt || 'No refined prompt has been generated yet.';
+
+            lastRefinedPromptContent.textContent = promptText;
+            lastRefinedPromptModal.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('Error fetching last refined prompt:', error);
+            alert('Could not fetch the last refined prompt. Please try generating some exercises first.');
+        }
+    }
+
     // --- Event Listeners ---
     settingsBtn.addEventListener('click', () => {
         loadTopics(); // Refresh topics when opening settings
@@ -730,13 +754,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     savePromptBtn.addEventListener('click', () => {
         const prompt = promptTextarea.value.trim();
+        const name = currentTopicName.textContent.trim();
         
         if (!prompt) {
             alert('Prompt cannot be empty.');
             return;
         }
         
-        updateTopicPrompt(state.editingTopicId, prompt);
+        updateTopicPrompt(state.editingTopicId, name, prompt);
     });
 
     viewVersionsBtn.addEventListener('click', () => {
@@ -753,6 +778,11 @@ document.addEventListener('DOMContentLoaded', () => {
     generateBtn.addEventListener('click', fetchExercises);
     hintBtn.addEventListener('click', handleHintClick);
     document.addEventListener('keydown', handleKeyPress);
+
+    viewLastRefinedPromptBtn.addEventListener('click', showLastRefinedPrompt);
+    lastRefinedPromptCloseBtn.addEventListener('click', () => {
+        lastRefinedPromptModal.classList.add('hidden');
+    });
 
     // --- Initialization ---
     function init() {
