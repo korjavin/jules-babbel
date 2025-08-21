@@ -82,6 +82,10 @@ var (
 	// Table names
 	topicsTableName   = "Topics"
 	versionsTableName = "PromptVersions"
+
+	// For observability
+	lastRefinedPrompt      string
+	lastRefinedPromptMutex sync.RWMutex
 )
 
 const metaPrompt = `You are a prompt engineering assistant. Your task is to refine the following user-provided prompt to improve the variety and creativity of the AI's output for generating language exercises.
@@ -647,6 +651,7 @@ func main() {
 	http.HandleFunc("/api/topics", handleTopics)
 	http.HandleFunc("/api/topics/", handleTopicByID)
 	http.HandleFunc("/api/versions/", handleVersions)
+	http.HandleFunc("/api/last-refined-prompt", handleGetLastRefinedPrompt)
 	
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -826,6 +831,11 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		// If refining fails, log the error and fall back to the original prompt
 		log.Printf("Error refining prompt, falling back to original: %v", err)
 		finalPrompt = topic.Prompt
+	} else {
+		// Store the last successfully refined prompt for observability
+		lastRefinedPromptMutex.Lock()
+		lastRefinedPrompt = finalPrompt
+		lastRefinedPromptMutex.Unlock()
 	}
 
 	// Create OpenAI request with the (potentially refined) prompt
@@ -897,6 +907,27 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	w.Write(respBody)
+}
+
+func handleGetLastRefinedPrompt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	lastRefinedPromptMutex.RLock()
+	defer lastRefinedPromptMutex.RUnlock()
+
+	response := map[string]string{
+		"last_refined_prompt": lastRefinedPrompt,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // Handle topics CRUD operations

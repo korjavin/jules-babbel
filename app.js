@@ -46,6 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const versionsList = document.getElementById('versions-list');
     const closeVersionsBtn = document.getElementById('close-versions-btn');
 
+    // Observability elements
+    const viewLastRefinedPromptBtn = document.getElementById('view-last-refined-prompt-btn');
+    const lastRefinedPromptModal = document.getElementById('last-refined-prompt-modal');
+    const lastRefinedPromptContent = document.getElementById('last-refined-prompt-content');
+    const lastRefinedPromptCloseBtn = document.getElementById('last-refined-prompt-close-btn');
+
     // --- Application State ---
     let state = {
         currentTopicId: '',
@@ -683,6 +689,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Observability Functions ---
+    async function showLastRefinedPrompt() {
+        try {
+            const response = await fetch('/api/last-refined-prompt');
+            if (!response.ok) throw new Error('Failed to fetch the last refined prompt.');
+
+            const data = await response.json();
+            const promptText = data.last_refined_prompt || 'No refined prompt has been generated yet.';
+
+            lastRefinedPromptContent.textContent = promptText;
+            lastRefinedPromptModal.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('Error fetching last refined prompt:', error);
+            alert('Could not fetch the last refined prompt. Please try generating some exercises first.');
+        }
+    }
+
     // --- Event Listeners ---
     settingsBtn.addEventListener('click', () => {
         loadTopics(); // Refresh topics when opening settings
@@ -743,6 +767,11 @@ document.addEventListener('DOMContentLoaded', () => {
     generateBtn.addEventListener('click', fetchExercises);
     hintBtn.addEventListener('click', handleHintClick);
     document.addEventListener('keydown', handleKeyPress);
+
+    viewLastRefinedPromptBtn.addEventListener('click', showLastRefinedPrompt);
+    lastRefinedPromptCloseBtn.addEventListener('click', () => {
+        lastRefinedPromptModal.classList.add('hidden');
+    });
 
     // --- Initialization ---
     function init() {
