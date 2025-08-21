@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  srs:
+    image: ghcr.io/korjavin/german-conjuctions-trainer:master
+    container_name: gct
+    networks:
+      - vaultwarden_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gct.rule=Host(`${DNS_NAME}`)"
+      - "traefik.http.routers.gct.entrypoints=websecure"
+      - "traefik.http.routers.gct.tls.certresolver=myresolver"
+      - "io.containers.autoupdate=image"
+
+    restart: unless-stopped
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_URL=${OPENAI_URL}
+      - MODEL_NAME=${MODEL}
+
+networks:
+  vaultwarden_default:
+    external: true
