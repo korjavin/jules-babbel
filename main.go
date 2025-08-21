@@ -3,10 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type GenerateRequest struct {
@@ -45,8 +49,11 @@ func main() {
 		port = "8080"
 	}
 
-	// Serve static files
-	http.Handle("/", http.FileServer(http.Dir("./static/")))
+	// Custom handler for index.html with cache-busting
+	http.HandleFunc("/", handleIndex)
+	
+	// Serve static files with cache headers
+	http.HandleFunc("/app.js", handleJS)
 	
 	// API endpoint for generating exercises
 	http.HandleFunc("/api/generate", handleGenerate)
@@ -59,6 +66,48 @@ func main() {
 
 	log.Printf("Server starting on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	
+	// Read the HTML file
+	content, err := os.ReadFile("index.html")
+	if err != nil {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	
+	// Replace the cache-busting parameter with current timestamp
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	htmlContent := string(content)
+	htmlContent = strings.ReplaceAll(htmlContent, "app.js?v=20250821001", fmt.Sprintf("app.js?v=%s", timestamp))
+	
+	// Set headers to prevent caching of the HTML file itself
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	w.Write([]byte(htmlContent))
+}
+
+func handleJS(w http.ResponseWriter, r *http.Request) {
+	// Read the JS file
+	content, err := os.ReadFile("app.js")
+	if err != nil {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	
+	// Set headers for JS file - allow caching but with versioning
+	w.Header().Set("Content-Type", "application/javascript")
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+	
+	w.Write(content)
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
