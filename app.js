@@ -320,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Replace exercise content with statistics
         document.getElementById('exercise-container').classList.add('hidden');
-        document.querySelector('.text-center').classList.add('hidden');
+        document.getElementById('controls-container').classList.add('hidden');
         document.querySelector('main .max-w-3xl').appendChild(statsContainer);
 
         // Add event listeners for the buttons
@@ -335,7 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         document.getElementById('exercise-container').classList.remove('hidden');
-        document.querySelector('.text-center').classList.remove('hidden');
+        document.getElementById('controls-container').classList.remove('hidden');
         
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
@@ -356,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         document.getElementById('exercise-container').classList.remove('hidden');
-        document.querySelector('.text-center').classList.remove('hidden');
+        document.getElementById('controls-container').classList.remove('hidden');
         
         state.currentExerciseIndex = 0;
         state.mistakes = 0;
