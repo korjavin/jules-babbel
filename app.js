@@ -137,14 +137,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const exercise = state.exercises[state.currentExerciseIndex];
 
+        addPunctuationIfNeeded(exercise, state.userSentence);
+
         exerciseCounter.textContent = `${state.currentExerciseIndex + 1} / ${state.exercises.length}`;
 
         // Reset UI
         englishHintEl.textContent = exercise.english_hint;
         scrambledWordsContainer.innerHTML = '';
         constructedSentenceEl.innerHTML = '';
-        answerPrompt.classList.remove('hidden');
         correctSentenceDisplay.textContent = '';
+
+        // Display initial punctuation if any
+        if (state.userSentence.length > 0) {
+            answerPrompt.classList.add('hidden');
+            state.userSentence.forEach(w => {
+                const span = document.createElement('span');
+                span.textContent = w;
+                span.className = 'px-2 py-1 bg-gray-100 rounded mr-1';
+                constructedSentenceEl.appendChild(span);
+            });
+        } else {
+            answerPrompt.classList.remove('hidden');
+        }
 
         // Tokenize the correct sentence to create word buttons, then shuffle them.
         const allTokens = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
@@ -183,29 +197,44 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.isLocked) return;
 
         const exercise = state.exercises[state.currentExerciseIndex];
-        
-        state.userSentence.push(word);
-        addPunctuationIfNeeded(exercise, state.userSentence);
-
-        // Hide the clicked button
-        button.classList.add('hidden');
-
-        // Update constructed sentence display
-        constructedSentenceEl.innerHTML = '';
-        answerPrompt.classList.add('hidden');
-        
-        state.userSentence.forEach(word => {
-            const span = document.createElement('span');
-            span.textContent = word;
-            span.className = 'px-2 py-1 bg-gray-100 rounded mr-1';
-            constructedSentenceEl.appendChild(span);
-        });
-
-        // Check if sentence is complete
         const correctWordArray = exercise.correct_german_sentence.match(/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu) || [];
+        const nonPunctuationWords = correctWordArray.filter(token => !isPunctuation(token));
         
-        if (state.userSentence.length === correctWordArray.length) {
-            handleSentenceCompletion(exercise, correctWordArray);
+        const userWords = state.userSentence.filter(token => !isPunctuation(token));
+        const nextCorrectWord = nonPunctuationWords[userWords.length];
+
+        if (word === nextCorrectWord) {
+            // Correct word
+            state.userSentence.push(word);
+            addPunctuationIfNeeded(exercise, state.userSentence);
+
+            // Hide the clicked button
+            button.classList.add('hidden');
+
+            // Update constructed sentence display
+            constructedSentenceEl.innerHTML = '';
+            answerPrompt.classList.add('hidden');
+
+            state.userSentence.forEach(w => {
+                const span = document.createElement('span');
+                span.textContent = w;
+                span.className = 'px-2 py-1 bg-gray-100 rounded mr-1';
+                constructedSentenceEl.appendChild(span);
+            });
+
+            // Check if sentence is complete
+            if (state.userSentence.length === correctWordArray.length) {
+                handleSentenceCompletion(exercise, correctWordArray);
+            }
+        } else {
+            // Incorrect word
+            state.mistakes++;
+            updateStats();
+
+            button.classList.add('incorrect-answer-feedback');
+            setTimeout(() => {
+                button.classList.remove('incorrect-answer-feedback');
+            }, 500);
         }
     }
 
