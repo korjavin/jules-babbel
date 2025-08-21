@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mehanizm/airtable"
 )
 
 type GenerateRequest struct {
@@ -34,6 +36,7 @@ type PromptVersion struct {
 	Version   int       `json:"version"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
 
 type TopicRequest struct {
 	Name   string `json:"name"`
@@ -70,26 +73,43 @@ type OpenAIResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// In-memory storage with mutex for thread safety
+// Airtable configuration
 var (
-	topics         = make(map[string]*Topic)
-	promptVersions = make(map[string][]*PromptVersion) // map[topicID][]versions
-	topicsMutex    sync.RWMutex
-	nextID         = 1
+	airtableClient   *airtable.Client
+	airtableBaseID   string
+	topicsMutex      sync.RWMutex
+	
+	// Table names
+	topicsTableName   = "Topics"
+	versionsTableName = "PromptVersions"
 )
 
-func generateID() string {
-	id := fmt.Sprintf("topic_%d_%d", nextID, time.Now().UnixNano())
-	nextID++
-	return id
-}
 
-func generateVersionID() string {
-	return fmt.Sprintf("version_%d_%d", nextID, time.Now().UnixNano())
+// Initialize Airtable client
+func initStorage() {
+	airtableToken := os.Getenv("AIRTABLE_TOKEN")
+	airtableBaseID = os.Getenv("AIRTABLE_BASE_ID")
+	
+	if airtableToken == "" {
+		log.Fatal("AIRTABLE_TOKEN environment variable is required")
+	}
+	if airtableBaseID == "" {
+		log.Fatal("AIRTABLE_BASE_ID environment variable is required")
+	}
+	
+	airtableClient = airtable.NewClient(airtableToken)
+	log.Printf("Airtable integration initialized with base ID: %s", airtableBaseID)
 }
 
 // Initialize with default topics
 func initializeDefaultTopics() {
+	// Check if we already have topics (to avoid duplicating on restart)
+	existingTopics, err := getAllTopics()
+	if err == nil && len(existingTopics) > 0 {
+		log.Printf("Found %d existing topics, skipping default topic initialization", len(existingTopics))
+		return
+	}
+
 	defaultTopics := []struct {
 		name   string
 		prompt string
@@ -132,57 +152,313 @@ Return ONLY the JSON object, with no other text or explanations.`,
 		},
 	}
 
+	log.Printf("Initializing %d default topics...", len(defaultTopics))
 	for _, defaultTopic := range defaultTopics {
-		createTopic(defaultTopic.name, defaultTopic.prompt)
+		topic, err := createTopic(defaultTopic.name, defaultTopic.prompt)
+		if err != nil {
+			log.Printf("Error creating default topic '%s': %v", defaultTopic.name, err)
+		} else {
+			log.Printf("Created default topic: %s (ID: %s)", topic.Name, topic.ID)
+		}
 	}
 }
 
-func createTopic(name, prompt string) *Topic {
-	topicsMutex.Lock()
-	defer topicsMutex.Unlock()
-
+// Data access functions using Airtable
+func createTopic(name, prompt string) (*Topic, error) {
+	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
+	now := time.Now().Format(time.RFC3339)
+	
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				Fields: map[string]any{
+					"Name":      name,
+					"Prompt":    prompt,
+					"CreatedAt": now,
+					"UpdatedAt": now,
+				},
+			},
+		},
+	}
+	
+	result, err := table.AddRecords(records)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create topic in Airtable: %v", err)
+	}
+	
+	if len(result.Records) == 0 {
+		return nil, fmt.Errorf("no records returned from Airtable")
+	}
+	
 	topic := &Topic{
-		ID:        generateID(),
+		ID:        result.Records[0].ID,
 		Name:      name,
 		Prompt:    prompt,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-
-	topics[topic.ID] = topic
 	
 	// Create initial version
-	addPromptVersion(topic.ID, prompt)
+	err = addPromptVersion(topic.ID, prompt)
+	if err != nil {
+		log.Printf("Warning: Failed to create initial version: %v", err)
+	}
 	
-	return topic
+	return topic, nil
 }
 
-func addPromptVersion(topicID, prompt string) {
-	if promptVersions[topicID] == nil {
-		promptVersions[topicID] = make([]*PromptVersion, 0)
-	}
-
-	version := &PromptVersion{
-		ID:        generateVersionID(),
-		TopicID:   topicID,
-		Prompt:    prompt,
-		Version:   len(promptVersions[topicID]) + 1,
-		CreatedAt: time.Now(),
-	}
-
-	promptVersions[topicID] = append(promptVersions[topicID], version)
+func getAllTopics() ([]*Topic, error) {
+	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
 	
-	// Keep only last 10 versions
-	if len(promptVersions[topicID]) > 10 {
-		promptVersions[topicID] = promptVersions[topicID][len(promptVersions[topicID])-10:]
-		// Renumber versions
-		for i, v := range promptVersions[topicID] {
-			v.Version = i + 1
+	records, err := table.GetRecords().Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get topics from Airtable: %v", err)
+	}
+	
+	var topics []*Topic
+	for _, record := range records.Records {
+		topic := &Topic{
+			ID: record.ID,
+		}
+		
+		if name, ok := record.Fields["Name"].(string); ok {
+			topic.Name = name
+		}
+		if prompt, ok := record.Fields["Prompt"].(string); ok {
+			topic.Prompt = prompt
+		}
+		if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+				topic.CreatedAt = t
+			}
+		}
+		if updatedAt, ok := record.Fields["UpdatedAt"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+				topic.UpdatedAt = t
+			}
+		}
+		
+		topics = append(topics, topic)
+	}
+	
+	// Sort by creation time
+	sort.Slice(topics, func(i, j int) bool {
+		return topics[i].CreatedAt.Before(topics[j].CreatedAt)
+	})
+	
+	return topics, nil
+}
+
+func getTopic(topicID string) (*Topic, error) {
+	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
+	
+	record, err := table.GetRecord(topicID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get topic from Airtable: %v", err)
+	}
+	
+	topic := &Topic{
+		ID: record.ID,
+	}
+	
+	if name, ok := record.Fields["Name"].(string); ok {
+		topic.Name = name
+	}
+	if prompt, ok := record.Fields["Prompt"].(string); ok {
+		topic.Prompt = prompt
+	}
+	if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			topic.CreatedAt = t
 		}
 	}
+	if updatedAt, ok := record.Fields["UpdatedAt"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+			topic.UpdatedAt = t
+		}
+	}
+	
+	return topic, nil
+}
+
+func updateTopic(topicID, prompt string) (*Topic, error) {
+	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
+	now := time.Now().Format(time.RFC3339)
+	
+	// First add the new version
+	err := addPromptVersion(topicID, prompt)
+	if err != nil {
+		log.Printf("Warning: Failed to create version: %v", err)
+	}
+	
+	// Clean up old versions (keep only last 10)
+	versions, err := getVersions(topicID)
+	if err == nil && len(versions) > 10 {
+		versionsTable := airtableClient.GetTable(airtableBaseID, versionsTableName)
+		oldVersions := versions[:len(versions)-10] // Keep last 10
+		var oldVersionIDs []string
+		for _, oldVersion := range oldVersions {
+			oldVersionIDs = append(oldVersionIDs, oldVersion.ID)
+		}
+		versionsTable.DeleteRecords(oldVersionIDs)
+	}
+	
+	// Update the topic
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				ID: topicID,
+				Fields: map[string]any{
+					"Prompt":    prompt,
+					"UpdatedAt": now,
+				},
+			},
+		},
+	}
+	
+	_, err = table.UpdateRecords(records)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update topic in Airtable: %v", err)
+	}
+	
+	return getTopic(topicID)
+}
+
+func deleteTopic(topicID string) error {
+	// First delete all versions for this topic
+	versions, err := getVersions(topicID)
+	if err == nil && len(versions) > 0 {
+		versionsTable := airtableClient.GetTable(airtableBaseID, versionsTableName)
+		var versionIDs []string
+		for _, version := range versions {
+			versionIDs = append(versionIDs, version.ID)
+		}
+		versionsTable.DeleteRecords(versionIDs)
+	}
+	
+	// Then delete the topic
+	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
+	_, err = table.DeleteRecords([]string{topicID})
+	if err != nil {
+		return fmt.Errorf("failed to delete topic from Airtable: %v", err)
+	}
+	
+	return nil
+}
+
+func getVersions(topicID string) ([]*PromptVersion, error) {
+	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
+	
+	records, err := table.GetRecords().
+		WithFilterFormula(fmt.Sprintf("{TopicID} = '%s'", topicID)).
+		Do()
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to get versions from Airtable: %v", err)
+	}
+	
+	var versions []*PromptVersion
+	for _, record := range records.Records {
+		version := &PromptVersion{
+			ID: record.ID,
+		}
+		
+		if topicIDField, ok := record.Fields["TopicID"].(string); ok {
+			version.TopicID = topicIDField
+		}
+		if prompt, ok := record.Fields["Prompt"].(string); ok {
+			version.Prompt = prompt
+		}
+		if versionNum, ok := record.Fields["Version"].(float64); ok {
+			version.Version = int(versionNum)
+		}
+		if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+				version.CreatedAt = t
+			}
+		}
+		
+		versions = append(versions, version)
+	}
+	
+	// Sort by version number
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].Version < versions[j].Version
+	})
+	
+	return versions, nil
+}
+
+func getVersion(versionID string) (*PromptVersion, error) {
+	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
+	
+	record, err := table.GetRecord(versionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get version from Airtable: %v", err)
+	}
+	
+	version := &PromptVersion{
+		ID: record.ID,
+	}
+	
+	if topicID, ok := record.Fields["TopicID"].(string); ok {
+		version.TopicID = topicID
+	}
+	if prompt, ok := record.Fields["Prompt"].(string); ok {
+		version.Prompt = prompt
+	}
+	if versionNum, ok := record.Fields["Version"].(float64); ok {
+		version.Version = int(versionNum)
+	}
+	if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			version.CreatedAt = t
+		}
+	}
+	
+	return version, nil
+}
+
+func addPromptVersion(topicID, prompt string) error {
+	// Get existing versions to determine next version number
+	versions, err := getVersions(topicID)
+	if err != nil {
+		return err
+	}
+	
+	nextVersion := 1
+	if len(versions) > 0 {
+		nextVersion = versions[len(versions)-1].Version + 1
+	}
+	
+	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
+	now := time.Now().Format(time.RFC3339)
+	
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				Fields: map[string]any{
+					"TopicID":   topicID,
+					"Prompt":    prompt,
+					"Version":   nextVersion,
+					"CreatedAt": now,
+				},
+			},
+		},
+	}
+	
+	_, err = table.AddRecords(records)
+	if err != nil {
+		return fmt.Errorf("failed to create version in Airtable: %v", err)
+	}
+	
+	return nil
 }
 
 func main() {
+	// Initialize storage backend
+	initStorage()
+	
 	// Initialize default topics
 	initializeDefaultTopics()
 
@@ -307,11 +583,8 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get topic and its prompt
-	topicsMutex.RLock()
-	topic, exists := topics[req.TopicID]
-	topicsMutex.RUnlock()
-	
-	if !exists {
+	topic, err := getTopic(req.TopicID)
+	if err != nil {
 		http.Error(w, "Topic not found", http.StatusNotFound)
 		return
 	}
@@ -371,7 +644,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if openaiResp.Error != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
-		errorResp := map[string]interface{}{
+		errorResp := map[string]any{
 			"error": map[string]string{
 				"message": openaiResp.Error.Message,
 				"type":    openaiResp.Error.Type,
@@ -401,17 +674,11 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		topicsMutex.RLock()
-		topicsList := make([]*Topic, 0, len(topics))
-		for _, topic := range topics {
-			topicsList = append(topicsList, topic)
+		topicsList, err := getAllTopics()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get topics: %v", err), http.StatusInternalServerError)
+			return
 		}
-		topicsMutex.RUnlock()
-		
-		// Sort by creation time
-		sort.Slice(topicsList, func(i, j int) bool {
-			return topicsList[i].CreatedAt.Before(topicsList[j].CreatedAt)
-		})
 		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string][]*Topic{"topics": topicsList})
@@ -428,7 +695,11 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
-		topic := createTopic(req.Name, req.Prompt)
+		topic, err := createTopic(req.Name, req.Prompt)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to create topic: %v", err), http.StatusInternalServerError)
+			return
+		}
 		
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -460,11 +731,8 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		topicsMutex.RLock()
-		topic, exists := topics[topicID]
-		topicsMutex.RUnlock()
-		
-		if !exists {
+		topic, err := getTopic(topicID)
+		if err != nil {
 			http.Error(w, "Topic not found", http.StatusNotFound)
 			return
 		}
@@ -484,37 +752,21 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
-		topicsMutex.Lock()
-		topic, exists := topics[topicID]
-		if !exists {
-			topicsMutex.Unlock()
-			http.Error(w, "Topic not found", http.StatusNotFound)
+		topic, err := updateTopic(topicID, req.Prompt)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to update topic: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
-		// Add new version before updating
-		addPromptVersion(topicID, req.Prompt)
-		
-		// Update topic
-		topic.Prompt = req.Prompt
-		topic.UpdatedAt = time.Now()
-		topicsMutex.Unlock()
 		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(topic)
 
 	case http.MethodDelete:
-		topicsMutex.Lock()
-		_, exists := topics[topicID]
-		if !exists {
-			topicsMutex.Unlock()
-			http.Error(w, "Topic not found", http.StatusNotFound)
+		err := deleteTopic(topicID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to delete topic: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
-		delete(topics, topicID)
-		delete(promptVersions, topicID)
-		topicsMutex.Unlock()
 		
 		w.WriteHeader(http.StatusNoContent)
 
@@ -546,12 +798,9 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		topicsMutex.RLock()
-		versions := promptVersions[topicID]
-		topicsMutex.RUnlock()
-		
-		if versions == nil {
-			http.Error(w, "Topic not found", http.StatusNotFound)
+		versions, err := getVersions(topicID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get versions: %v", err), http.StatusInternalServerError)
 			return
 		}
 		
@@ -567,37 +816,24 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 		
 		versionID := pathParts[2]
 		
-		topicsMutex.Lock()
-		topic, topicExists := topics[topicID]
-		versions := promptVersions[topicID]
-		
-		if !topicExists || versions == nil {
-			topicsMutex.Unlock()
-			http.Error(w, "Topic not found", http.StatusNotFound)
-			return
-		}
-		
-		var versionToRestore *PromptVersion
-		for _, v := range versions {
-			if v.ID == versionID {
-				versionToRestore = v
-				break
-			}
-		}
-		
-		if versionToRestore == nil {
-			topicsMutex.Unlock()
+		versionToRestore, err := getVersion(versionID)
+		if err != nil {
 			http.Error(w, "Version not found", http.StatusNotFound)
 			return
 		}
 		
-		// Create new version with restored content
-		addPromptVersion(topicID, versionToRestore.Prompt)
+		// Verify the version belongs to the requested topic
+		if versionToRestore.TopicID != topicID {
+			http.Error(w, "Version does not belong to this topic", http.StatusBadRequest)
+			return
+		}
 		
-		// Update topic
-		topic.Prompt = versionToRestore.Prompt
-		topic.UpdatedAt = time.Now()
-		topicsMutex.Unlock()
+		// Update topic with restored prompt (this will automatically create a new version)
+		topic, err := updateTopic(topicID, versionToRestore.Prompt)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
+			return
+		}
 		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(topic)

@@ -1,0 +1,4 @@
+github.com/mehanizm/airtable v0.3.4 h1:2ny8QN+O2YIs0rBXn61OAUlsBXaLDPsBhVILeWZBBNo=
+github.com/mehanizm/airtable v0.3.4/go.mod h1:ucwKW2iPJoEK9dIL7ueCaDdjClpG6pplAOGabgJtoLg=
+golang.org/x/time v0.8.0 h1:9i3RxcPv3PZnitoVGMPDKZSq1xW1gK1Xy3ArNOGZfEg=
+golang.org/x/time v0.8.0/go.mod h1:3BpzKBy/shNhVucY/MWOyx10tF3SFh9QdLuxbVysPQM=
