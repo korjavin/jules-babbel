@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mehanizm/airtable"
+	"golang.org/x/time/rate"
 )
 
 type GenerateRequest struct {
@@ -83,6 +85,26 @@ var (
 	topicsTableName   = "Topics"
 	versionsTableName = "PromptVersions"
 )
+
+// Rate limiting
+var (
+	clients = make(map[string]*client)
+	mu      sync.Mutex
+)
+
+type client struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
+func getClientIP(r *http.Request) string {
+	ip := r.Header.Get("X-Forwarded-For")
+	if ip != "" {
+		return ip
+	}
+	ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+	return ip
+}
 
 
 // Initialize Airtable client
@@ -616,6 +638,20 @@ func main() {
 	// Initialize default topics
 	initializeDefaultTopics()
 
+	// Cleanup old clients every 10 minutes
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			mu.Lock()
+			for ip, c := range clients {
+				if time.Since(c.lastSeen) > 30*time.Minute {
+					delete(clients, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -706,11 +742,33 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	
+
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+
+	// Rate limiting
+	ip := getClientIP(r)
+	mu.Lock()
+	if _, found := clients[ip]; !found {
+		// Allow 1 request every 3 seconds, with a burst of 1.
+		clients[ip] = &client{limiter: rate.NewLimiter(rate.Every(3*time.Second), 1)}
+	}
+	clients[ip].lastSeen = time.Now()
+	if !clients[ip].limiter.Allow() {
+		mu.Unlock()
+		// Return a JSON error message
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]string{
+				"message": "You are making requests too quickly. Please wait a few seconds and try again.",
+			},
+		})
+		return
+	}
+	mu.Unlock()
 
 	// Get configuration from environment
 	apiKey := os.Getenv("OPENAI_API_KEY")

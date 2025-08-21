@@ -553,8 +553,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`API Error: ${response.statusText} - ${errorData.error.message}`);
+                const errorData = await response.json().catch(() => ({})); // Gracefully handle non-JSON error bodies
+                const errorMessage = errorData.error?.message || response.statusText;
+                const error = new Error(errorMessage);
+                error.status = response.status;
+                throw error;
             }
 
             const data = await response.json();
@@ -576,11 +579,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Error fetching exercises:', error);
-            alert(`Failed to fetch new exercises. Please check your API key and network connection. \nError: ${error.message}`);
+            if (error.status === 429) {
+                alert(`Rate Limit Exceeded: ${error.message}`);
+            } else {
+                alert(`Failed to fetch new exercises. Please check your API key and network connection. \nError: ${error.message}`);
+            }
             renderExercise();
         } finally {
             loadingSpinner.classList.add('hidden');
-            generateBtn.disabled = false;
+            // Keep button disabled and re-enable after 5 seconds
+            setTimeout(() => {
+                generateBtn.disabled = false;
+            }, 5000);
         }
     }
 
