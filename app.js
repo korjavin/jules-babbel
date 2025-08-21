@@ -33,7 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
         userSentence: [],
         isLocked: false, // To prevent clicks after a sentence is completed
         mistakes: 0,
-        hintsUsed: 0
+        hintsUsed: 0,
+        startTime: null,
+        sessionTime: 0,
+        isSessionComplete: false
     };
 
     // --- Sample Data ---
@@ -84,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ]
     };
 
-    const defaultMasterPrompt = `You are an expert German language tutor creating B1-level grammar exercises. Your task is to generate a JSON object containing exactly 7 unique sentences focused on German conjunctions.
+    const defaultMasterPrompt = `You are an expert German language tutor creating B1-level grammar exercises. Your task is to generate a JSON object containing unique sentences focused on German conjunctions.
 
 Please adhere to the following rules:
 1.  **Sentence Structure:** Each sentence must correctly use a German conjunction. Include a mix of coordinating and subordinating conjunctions from the provided list.
@@ -107,8 +110,7 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         },
         "required": ["conjunction_topic", "english_hint", "correct_german_sentence"]
       },
-      "minItems": 7,
-      "maxItems": 7
+      "minItems": 1
     }
   },
   "required": ["exercises"]
@@ -256,11 +258,22 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
         const exercise = state.exercises[state.currentExerciseIndex];
         correctSentenceDisplay.textContent = `Correct! ${exercise.correct_german_sentence}`;
 
-        // Automatically load the next exercise after a delay
-        setTimeout(() => {
-            state.currentExerciseIndex = (state.currentExerciseIndex + 1) % state.exercises.length;
-            renderExercise();
-        }, 3000);
+        // Check if this was the last exercise
+        if (state.currentExerciseIndex >= state.exercises.length - 1) {
+            // Session complete - calculate final time and show statistics
+            state.sessionTime = Date.now() - state.startTime;
+            state.isSessionComplete = true;
+            
+            setTimeout(() => {
+                showStatisticsPage();
+            }, 3000);
+        } else {
+            // Move to next exercise
+            setTimeout(() => {
+                state.currentExerciseIndex++;
+                renderExercise();
+            }, 3000);
+        }
     }
 
     function handleHintClick() {
@@ -297,6 +310,118 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
     function updateStats() {
         statsMistakesEl.textContent = `Mistakes: ${state.mistakes}`;
         statsHintsEl.textContent = `Hints Used: ${state.hintsUsed}`;
+    }
+
+    function formatTime(milliseconds) {
+        const totalSeconds = Math.floor(milliseconds / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    function showStatisticsPage() {
+        // Hide main exercise content
+        document.getElementById('exercise-container').classList.add('hidden');
+        document.querySelector('.text-center').classList.add('hidden'); // Hide hint and generate buttons
+        
+        // Create and show statistics container
+        const statsContainer = document.createElement('div');
+        statsContainer.id = 'statistics-container';
+        statsContainer.className = 'card rounded-lg p-6 md:p-8 mb-8 text-center';
+        
+        const accuracy = state.exercises.length > 0 ? 
+            Math.round(((state.exercises.length - state.mistakes) / state.exercises.length) * 100) : 100;
+        
+        statsContainer.innerHTML = `
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">🎉 Session Complete!</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-blue-600">${state.exercises.length}</div>
+                    <div class="text-gray-600">Exercises Completed</div>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-red-600">${state.mistakes}</div>
+                    <div class="text-gray-600">Mistakes Made</div>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-yellow-600">${state.hintsUsed}</div>
+                    <div class="text-gray-600">Hints Used</div>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-green-600">${accuracy}%</div>
+                    <div class="text-gray-600">Accuracy</div>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-purple-600">${formatTime(state.sessionTime)}</div>
+                    <div class="text-gray-600">Time Spent</div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-gray-600">${Math.round(state.sessionTime / state.exercises.length / 1000)}s</div>
+                    <div class="text-gray-600">Avg per Exercise</div>
+                </div>
+            </div>
+            <div class="space-y-4">
+                <button id="new-session-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Start New Session</button>
+                <button id="same-exercises-btn" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold text-lg">Practice Same Exercises</button>
+            </div>
+        `;
+        
+        document.getElementById('app').appendChild(statsContainer);
+        
+        // Add event listeners for the new buttons
+        document.getElementById('new-session-btn').addEventListener('click', () => {
+            resetForNewSession();
+            fetchExercises();
+        });
+        
+        document.getElementById('same-exercises-btn').addEventListener('click', () => {
+            resetForSameExercises();
+        });
+    }
+
+    function resetForNewSession() {
+        // Remove statistics container
+        const statsContainer = document.getElementById('statistics-container');
+        if (statsContainer) {
+            statsContainer.remove();
+        }
+        
+        // Show main content
+        document.getElementById('exercise-container').classList.remove('hidden');
+        document.querySelector('.text-center').classList.remove('hidden');
+        
+        // Reset state for new session
+        state.currentExerciseIndex = 0;
+        state.mistakes = 0;
+        state.hintsUsed = 0;
+        state.sessionTime = 0;
+        state.isSessionComplete = false;
+        state.startTime = null;
+        
+        updateStats();
+    }
+
+    function resetForSameExercises() {
+        // Remove statistics container
+        const statsContainer = document.getElementById('statistics-container');
+        if (statsContainer) {
+            statsContainer.remove();
+        }
+        
+        // Show main content
+        document.getElementById('exercise-container').classList.remove('hidden');
+        document.querySelector('.text-center').classList.remove('hidden');
+        
+        // Reset state but keep same exercises
+        state.currentExerciseIndex = 0;
+        state.mistakes = 0;
+        state.hintsUsed = 0;
+        state.sessionTime = 0;
+        state.isSessionComplete = false;
+        state.startTime = Date.now();
+        
+        updateStats();
+        renderExercise();
     }
 
     function handleKeyPress(event) {
@@ -372,6 +497,9 @@ Return ONLY the JSON object, with no other text or explanations. The JSON object
                 state.currentExerciseIndex = 0;
                 state.mistakes = 0;
                 state.hintsUsed = 0;
+                state.sessionTime = 0;
+                state.isSessionComplete = false;
+                state.startTime = Date.now(); // Start timing the session
                 updateStats();
                 renderExercise();
             } else {
