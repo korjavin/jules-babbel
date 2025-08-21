@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionTime: 0,
         isSessionComplete: false,
         editingTopicId: null,
-        timer: 30,
+        timer: 60,
         timerInterval: null
     };
 
@@ -578,7 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingSpinner.classList.remove('hidden');
         exerciseContent.classList.add('hidden');
         generateBtn.disabled = true;
-        state.timer = 30;
+        state.timer = 60;
         timer.textContent = state.timer;
         state.timerInterval = setInterval(() => {
             state.timer--;
