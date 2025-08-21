@@ -99,6 +99,57 @@ func initStorage() {
 	
 	airtableClient = airtable.NewClient(airtableToken)
 	log.Printf("Airtable integration initialized with base ID: %s", airtableBaseID)
+	
+	// Verify and setup tables
+	err := setupAirtableTables()
+	if err != nil {
+		log.Printf("Warning: Could not setup Airtable tables: %v", err)
+		log.Printf("Please manually create the following tables in your Airtable base:")
+		log.Printf("1. Table name: 'Topics'")
+		log.Printf("   Fields: Name (Single line text), Prompt (Long text), CreatedAt (Single line text), UpdatedAt (Single line text)")
+		log.Printf("2. Table name: 'PromptVersions'")
+		log.Printf("   Fields: TopicID (Single line text), Prompt (Long text), Version (Number), CreatedAt (Single line text)")
+	}
+}
+
+// Setup Airtable tables if they don't exist or verify their structure
+func setupAirtableTables() error {
+	log.Printf("Setting up Airtable tables...")
+	
+	// Try to create the tables using Airtable's API
+	err := createAirtableTables()
+	if err != nil {
+		log.Printf("Could not auto-create tables: %v", err)
+		return err
+	}
+	
+	return nil
+}
+
+// Create Airtable tables using the Metadata API
+func createAirtableTables() error {
+	// Note: Airtable's table creation via API requires Base Schema API access
+	// For now, we'll provide instructions for manual creation
+	
+	log.Printf("Please manually create these tables in your Airtable base:")
+	log.Printf("")
+	log.Printf("📋 Table 1: 'Topics'")
+	log.Printf("   • Name: Single line text")
+	log.Printf("   • Prompt: Long text")
+	log.Printf("   • CreatedAt: Single line text (optional)")
+	log.Printf("   • UpdatedAt: Single line text (optional)")
+	log.Printf("")
+	log.Printf("📋 Table 2: 'PromptVersions'") 
+	log.Printf("   • TopicID: Single line text")
+	log.Printf("   • Prompt: Long text")
+	log.Printf("   • Version: Number")
+	log.Printf("   • CreatedAt: Single line text (optional)")
+	log.Printf("")
+	log.Printf("💡 Tip: The timestamp fields (CreatedAt, UpdatedAt) are optional.")
+	log.Printf("💡 The app will work with just the required fields if timestamps are missing.")
+	log.Printf("")
+	
+	return fmt.Errorf("manual table creation required")
 }
 
 // Initialize with default topics
@@ -168,6 +219,13 @@ func createTopic(name, prompt string) (*Topic, error) {
 	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
 	now := time.Now().Format(time.RFC3339)
 	
+	// Try with timestamp fields first, fallback to just required fields
+	fields := map[string]any{
+		"Name":   name,
+		"Prompt": prompt,
+	}
+	
+	// Try to add timestamp fields if they exist
 	records := &airtable.Records{
 		Records: []*airtable.Record{
 			{
@@ -183,7 +241,16 @@ func createTopic(name, prompt string) (*Topic, error) {
 	
 	result, err := table.AddRecords(records)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create topic in Airtable: %v", err)
+		// If it failed due to unknown fields, try with minimal fields
+		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
+			log.Printf("Timestamp fields not found, creating with minimal fields")
+			records.Records[0].Fields = fields
+			result, err = table.AddRecords(records)
+		}
+		
+		if err != nil {
+			return nil, fmt.Errorf("failed to create topic in Airtable: %v", err)
+		}
 	}
 	
 	if len(result.Records) == 0 {
@@ -318,7 +385,18 @@ func updateTopic(topicID, prompt string) (*Topic, error) {
 	
 	_, err = table.UpdateRecords(records)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update topic in Airtable: %v", err)
+		// If UpdatedAt field doesn't exist, try without it
+		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
+			log.Printf("UpdatedAt field not found, updating with minimal fields")
+			records.Records[0].Fields = map[string]any{
+				"Prompt": prompt,
+			}
+			_, err = table.UpdateRecords(records)
+		}
+		
+		if err != nil {
+			return nil, fmt.Errorf("failed to update topic in Airtable: %v", err)
+		}
 	}
 	
 	return getTopic(topicID)
@@ -422,7 +500,7 @@ func getVersion(versionID string) (*PromptVersion, error) {
 func addPromptVersion(topicID, prompt string) error {
 	// Get existing versions to determine next version number
 	versions, err := getVersions(topicID)
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "status 404") {
 		return err
 	}
 	
@@ -434,6 +512,7 @@ func addPromptVersion(topicID, prompt string) error {
 	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
 	now := time.Now().Format(time.RFC3339)
 	
+	// Try with timestamp field first, fallback to minimal fields
 	records := &airtable.Records{
 		Records: []*airtable.Record{
 			{
@@ -449,7 +528,20 @@ func addPromptVersion(topicID, prompt string) error {
 	
 	_, err = table.AddRecords(records)
 	if err != nil {
-		return fmt.Errorf("failed to create version in Airtable: %v", err)
+		// If it failed due to unknown fields, try with minimal fields
+		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
+			log.Printf("CreatedAt field not found in PromptVersions, creating with minimal fields")
+			records.Records[0].Fields = map[string]any{
+				"TopicID": topicID,
+				"Prompt":  prompt,
+				"Version": nextVersion,
+			}
+			_, err = table.AddRecords(records)
+		}
+		
+		if err != nil {
+			return fmt.Errorf("failed to create version in Airtable: %v", err)
+		}
 	}
 	
 	return nil
