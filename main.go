@@ -43,7 +43,8 @@ type TopicRequest struct {
 	Prompt string `json:"prompt"`
 }
 
-type UpdatePromptRequest struct {
+type UpdateTopicRequest struct {
+	Name   string `json:"name"`
 	Prompt string `json:"prompt"`
 }
 
@@ -386,16 +387,16 @@ func getTopic(topicID string) (*Topic, error) {
 	return topic, nil
 }
 
-func updateTopic(topicID, prompt string) (*Topic, error) {
+func updateTopic(topicID, name, prompt string) (*Topic, error) {
 	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
 	now := time.Now().Format(time.RFC3339)
-	
+
 	// First add the new version
 	err := addPromptVersion(topicID, prompt)
 	if err != nil {
 		log.Printf("Warning: Failed to create version: %v", err)
 	}
-	
+
 	// Clean up old versions (keep only last 10)
 	versions, err := getVersions(topicID)
 	if err == nil && len(versions) > 10 {
@@ -407,36 +408,39 @@ func updateTopic(topicID, prompt string) (*Topic, error) {
 		}
 		versionsTable.DeleteRecords(oldVersionIDs)
 	}
-	
-	// Update the topic
+
+	// Prepare fields for update
+	fields := map[string]any{
+		"Prompt":    prompt,
+		"UpdatedAt": now,
+	}
+	if name != "" {
+		fields["Name"] = name
+	}
+
 	records := &airtable.Records{
 		Records: []*airtable.Record{
 			{
-				ID: topicID,
-				Fields: map[string]any{
-					"Prompt":    prompt,
-					"UpdatedAt": now,
-				},
+				ID:     topicID,
+				Fields: fields,
 			},
 		},
 	}
-	
+
 	_, err = table.UpdateRecords(records)
 	if err != nil {
-		// If UpdatedAt field doesn't exist, try without it
 		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
 			log.Printf("UpdatedAt field not found, updating with minimal fields")
-			records.Records[0].Fields = map[string]any{
-				"Prompt": prompt,
-			}
+			delete(fields, "UpdatedAt")
+			records.Records[0].Fields = fields
 			_, err = table.UpdateRecords(records)
 		}
-		
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to update topic in Airtable: %v", err)
 		}
 	}
-	
+
 	return getTopic(topicID)
 }
 
@@ -895,23 +899,23 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(topic)
 
 	case http.MethodPut:
-		var req UpdatePromptRequest
+		var req UpdateTopicRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
-		
+
 		if req.Prompt == "" {
 			http.Error(w, "Prompt is required", http.StatusBadRequest)
 			return
 		}
-		
-		topic, err := updateTopic(topicID, req.Prompt)
+
+		topic, err := updateTopic(topicID, req.Name, req.Prompt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to update topic: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(topic)
 
@@ -982,8 +986,15 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
+		// Get the current topic name to preserve it
+		currentTopic, err := getTopic(topicID)
+		if err != nil {
+			http.Error(w, "Failed to get current topic", http.StatusNotFound)
+			return
+		}
+
 		// Update topic with restored prompt (this will automatically create a new version)
-		topic, err := updateTopic(topicID, versionToRestore.Prompt)
+		topic, err := updateTopic(topicID, currentTopic.Name, versionToRestore.Prompt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
 			return
