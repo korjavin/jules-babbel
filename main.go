@@ -986,8 +986,15 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
+		// Get the current topic name to preserve it
+		currentTopic, err := getTopic(topicID)
+		if err != nil {
+			http.Error(w, "Failed to get current topic", http.StatusNotFound)
+			return
+		}
+
 		// Update topic with restored prompt (this will automatically create a new version)
-		topic, err := updateTopic(topicID, "", versionToRestore.Prompt)
+		topic, err := updateTopic(topicID, currentTopic.Name, versionToRestore.Prompt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
 			return
