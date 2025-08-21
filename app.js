@@ -512,12 +512,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function updateTopicPrompt(topicId, prompt) {
+    async function updateTopicPrompt(topicId, name, prompt) {
         try {
             const response = await fetch(`/api/topics/${topicId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
+                body: JSON.stringify({ name, prompt })
             });
             
             if (!response.ok) throw new Error('Failed to update prompt');
@@ -720,13 +720,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     savePromptBtn.addEventListener('click', () => {
         const prompt = promptTextarea.value.trim();
+        const name = currentTopicName.textContent.trim();
         
         if (!prompt) {
             alert('Prompt cannot be empty.');
             return;
         }
         
-        updateTopicPrompt(state.editingTopicId, prompt);
+        updateTopicPrompt(state.editingTopicId, name, prompt);
     });
 
     viewVersionsBtn.addEventListener('click', () => {
