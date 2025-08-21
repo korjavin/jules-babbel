@@ -1,19 +1,35 @@
 # German Conjunctions Trainer
 
-An interactive German language learning application that helps B1-level students master German conjunctions through engaging word-scramble exercises.
+An interactive German language learning application that helps B1-level students master German grammar through engaging word-scramble exercises.
 
 ## Features
 
-- 🎯 Interactive word-scramble exercises with customizable topics
-- ⌨️ Keyboard hotkeys (1-9, a-z) for quick word selection
-- 🎨 Automatic punctuation handling
-- 🔐 Secure backend API proxy (no client-side API keys)
-- 🌍 Support for custom OpenAI-compatible APIs
-- 📱 Responsive design
-- 🏷️ **Topics Management**: Create and organize different grammar topics
-- 📝 **Prompt Customization**: Edit and customize exercise generation prompts
-- 🕒 **Version History**: Track and restore previous prompt versions (last 10)
-- 💾 **Airtable Integration**: Persistent storage for topics and prompts
+- ✨ **Automatic Prompt Refinement**: Uses a meta-prompt to automatically improve user-defined prompts, leading to more creative and varied exercises.
+- 🎯 **Interactive Exercises**: Engaging word-scramble exercises with customizable topics.
+- 💡 **Hint System**: Provides hints for the next correct word, with usage tracking.
+- 📈 **Session Statistics**: Detailed performance tracking, including mistakes, hints used, accuracy, and time per exercise.
+-  Lokal **Word Scrambling**: Ensures instant feedback by scrambling words locally.
+- ⌨️ **Keyboard Hotkeys**: Use keys 1-9 and a-z for quick word selection.
+- 🎨 **Automatic Punctuation**: Handles punctuation automatically for a smoother experience.
+- 🔐 **Secure Backend**: API keys are stored securely on the server-side.
+- 🌍 **Custom API Support**: Compatible with any OpenAI-compatible API.
+- 📱 **Responsive Design**: Fully functional on both desktop and mobile devices.
+- 🏷️ **Topics Management**: Create, edit, and delete grammar topics.
+- 📝 **Prompt Customization**: Tailor exercise generation prompts for each topic.
+- 🕒 **Version History**: Track and restore the last 10 versions of a prompt.
+- 💾 **Airtable Integration**: Persistently stores topics and prompt versions.
+
+## Prompt Refinement
+
+This application uses a unique **Prompt Refinement** feature to enhance the quality of the generated exercises. When you request new exercises, the application first sends your custom prompt to a language model with a "meta-prompt". This meta-prompt instructs the model to refine your original prompt for better clarity, creativity, and variety, all while preserving the core task and required JSON output format.
+
+This ensures that the exercises you receive are not repetitive and are of higher pedagogical quality.
+
+## Observability
+
+To provide insight into the prompt refinement process, you can view the most recently used refined prompt. This is useful for debugging and understanding how the AI is interpreting and improving your prompts.
+
+You can access this feature via the "View Last Refined Prompt" button in the settings menu.
 
 ## Running with Docker
 
@@ -145,26 +161,23 @@ go run main.go
 # Access the app at http://localhost:8080
 ```
 
-### Project Structure:
+### Rate Limiting
+The backend includes rate limiting to prevent abuse. By default, it allows one request every three seconds per IP address.
+
+### Project Structure
 
 ```
-├── main.go              # Go backend server with Airtable integration
-├── index.html           # Main application UI with topics management
-├── app.js              # Frontend JavaScript with topics & versioning
-├── agent.md            # Context file for AI development
-├── Dockerfile          # Container definition
-├── docker-compose.yml  # Docker composition with environment variables
-└── .github/workflows/  # CI/CD pipeline
+.
+├── main.go              # Go backend server with API and Airtable integration
+├── index.html           # Main application UI
+├── app.js               # Frontend JavaScript for interactivity and topics management
+├── agent.md             # Context file for AI development
+├── Dockerfile           # Container definition for production
+├── docker-compose.yml   # Docker Compose for local development
+├── go.mod               # Go module dependencies
+├── example.prompt.md    # Example prompt for exercise generation
+└── .github/workflows/   # CI/CD pipelines for Docker builds
 ```
-
-### Topics Management Features:
-
-- **Create Topics**: Add new grammar topics with custom prompts
-- **Edit Prompts**: Modify exercise generation prompts for each topic  
-- **Version History**: Automatic versioning of prompt changes (last 10 versions)
-- **Restore Versions**: Easily revert to previous prompt versions
-- **Delete Topics**: Remove topics and all associated versions
-- **Persistent Storage**: All data stored in Airtable for persistence
 
 ## Security
 

@@ -1,62 +1,64 @@
 # German Conjunctions Trainer - Agent Documentation
 
 ## Project Overview
-A web-based spaced repetition system (SRS) for learning German conjunctions. Users complete exercises by constructing sentences from scrambled words, with statistics tracking, performance feedback, and customizable topic management.
+A web-based application for learning German grammar. It features interactive word-scramble exercises, customizable topics, and a unique prompt refinement system to ensure high-quality, varied content. The application tracks user performance and provides session statistics.
 
 ## Architecture
-- **Backend**: Go HTTP server with OpenAI API integration and Airtable storage
-- **Frontend**: Vanilla JavaScript with Tailwind CSS and topics management UI
-- **Storage**: Airtable database for persistent topics and prompt versioning
-- **Deployment**: Docker containerized with environment-based configuration
+- **Backend**: Go HTTP server featuring an AI-powered prompt refinement system, API proxying to OpenAI, and Airtable integration for data persistence.
+- **Frontend**: Vanilla JavaScript with Tailwind CSS, providing a responsive UI for exercises and topics management.
+- **Storage**: Airtable for storing grammar topics and their version history.
+- **Deployment**: Docker container with environment-based configuration for easy deployment.
 
 ## File Structure
 ```
-/
-├── main.go           # Go backend server
-├── index.html        # Main HTML page with Tailwind CSS styling
-├── app.js           # Frontend JavaScript application
-├── Dockerfile       # Container configuration
-├── docker-compose.yml # Docker orchestration
-├── go.mod/go.sum    # Go dependencies
-└── agent.md         # This documentation file
+.
+├── main.go              # Go backend server with API and Airtable integration
+├── index.html           # Main application UI
+├── app.js               # Frontend JavaScript for interactivity and topics management
+├── agent.md             # Context file for AI development
+├── Dockerfile           # Container definition for production
+├── docker-compose.yml   # Docker Compose for local development
+├── go.mod               # Go module dependencies
+├── example.prompt.md    # Example prompt for exercise generation
+└── .github/workflows/   # CI/CD pipelines for Docker builds
 ```
 
 ## Backend (main.go)
 ### Key Components:
-- **Static File Serving**: Custom handlers for dynamic cache-busting
-- **API Endpoint**: `/api/generate` - Proxies requests to OpenAI API
-- **Cache Management**: 
-  - HTML files: no-cache headers
-  - JS files: long-term caching with versioning
-  - Dynamic timestamp injection for cache-busting
+- **Prompt Refinement**: The `refinePrompt` function uses a `metaPrompt` to instruct an LLM to improve user-provided prompts, enhancing exercise quality.
+- **Static File Serving**: Custom handlers serve `index.html` with dynamic cache-busting and `app.js` with long-term caching.
+- **API Proxy**: The `/api/generate` endpoint securely proxies requests to the OpenAI API, using the refined prompt.
+- **Rate Limiting**: IP-based rate limiting (1 request every 3 seconds) to prevent abuse.
+- **Airtable Integration**: Manages CRUD operations for topics and prompt versions.
 
 ### Environment Variables:
-- `OPENAI_API_KEY`: Required for AI exercise generation
-- `AIRTABLE_TOKEN`: Required for Airtable integration (Personal Access Token)
-- `AIRTABLE_BASE_ID`: Required for Airtable base identification  
-- `OPENAI_URL`: API endpoint (defaults to OpenAI)
-- `MODEL_NAME`: AI model (defaults to gpt-3.5-turbo-1106)
-- `PORT`: Server port (defaults to 8080)
+- `OPENAI_API_KEY`: Required for AI exercise generation.
+- `AIRTABLE_TOKEN`: Required for Airtable integration.
+- `AIRTABLE_BASE_ID`: Required for Airtable base identification.
+- `OPENAI_URL`: API endpoint (defaults to `https://api.openai.com/v1`).
+- `MODEL_NAME`: AI model (defaults to `gpt-3.5-turbo-1106`).
+- `PORT`: Server port (defaults to `8080`).
 
 ### API Structure:
 ```go
 // Exercise Generation
 POST /api/generate
-{
-  "topic_id": "string"
-}
-Response: OpenAI completion response (JSON)
+{ "topic_id": "string" }
+// -> Returns OpenAI completion response (JSON)
 
 // Topics Management
-GET /api/topics - Get all topics
-POST /api/topics - Create new topic
-GET /api/topics/{id} - Get specific topic
-PUT /api/topics/{id} - Update topic prompt (creates version)
-DELETE /api/topics/{id} - Delete topic and versions
+GET    /api/topics      // Get all topics
+POST   /api/topics      // Create a new topic
+GET    /api/topics/{id} // Get a specific topic
+PUT    /api/topics/{id} // Update a topic (creates a new version)
+DELETE /api/topics/{id} // Delete a topic and its versions
 
 // Version History
-GET /api/versions/{topicId} - Get version history
-POST /api/versions/{topicId}/restore/{versionId} - Restore version
+GET  /api/versions/{topicId}                  // Get version history for a topic
+POST /api/versions/{topicId}/restore/{versionId} // Restore a specific version
+
+// Observability
+GET /api/last-refined-prompt // Get the most recently used refined prompt
 ```
 
 ## Airtable Integration
@@ -129,44 +131,33 @@ state = {
 - `createTopic()`: Creates new topic via API
 - `updateTopicPrompt()`: Updates topic prompt (creates new version)
 - `showVersionHistory()`: Displays version history modal for topic
-- `restoreVersion()`: Restores previous prompt version
+- `restoreVersion()`: Restores a previous prompt version.
+- `handleHintClick()`: Provides a hint to the user by highlighting the next correct word.
+- `showStatisticsPage()`: Displays a detailed statistics page upon session completion.
 
-### Statistics Features:
-- **Tracked Metrics**: Exercises completed, mistakes, hints used, accuracy, time spent, avg time per exercise
-- **Session Flow**: After completing all exercises, shows statistics page instead of cycling
-- **Options**: Start new session or practice same exercises again
+### Key Features:
+- **Local Word Scrambling**: The `renderExercise` function tokenizes the correct sentence and shuffles the words locally using a Fisher-Yates shuffle algorithm. This provides instant feedback without waiting for an API call.
+- **Hint System**: The `handleHintClick` function highlights the next correct word in the sequence. Hint usage is tracked in the session statistics.
+- **Statistics Tracking**: The application tracks mistakes, hints used, and session time. A detailed statistics page is shown at the end of a session.
+- **Observability**: A "View Last Refined Prompt" button allows the user to see the prompt that was actually sent to the AI, which is useful for debugging.
 
-## Key Implementation Details
+## Prompt Refinement
+The core of the application's exercise generation is the `refinePrompt` function in `main.go`. This function is designed to improve the quality and variety of exercises by using a two-step AI process:
 
-### Cache-Busting System:
-1. Go server dynamically injects timestamps into HTML
-2. HTML has no-cache headers
-3. JS files cached with version parameters
-4. Automatic cache invalidation on server restart
+1.  **Meta-Prompt**: A hardcoded `metaPrompt` is used to wrap the user's custom prompt. This meta-prompt instructs the language model to act as a "prompt engineering assistant" and refine the user's prompt based on a set of rules (e.g., enhance instructions, add examples, maintain the JSON schema).
+2.  **Refined Prompt Generation**: The combined prompt (meta-prompt + user's prompt) is sent to the AI. The AI's response is the *refined prompt*.
+3.  **Exercise Generation**: This new, refined prompt is then used to call the AI again to generate the actual exercises in the required JSON format.
 
-### Exercise Flow:
-1. User loads page → Sample exercises or empty state
-2. Click "Generate More Exercises" → API call to get new exercises
-3. Complete exercises sequentially → Statistics page shown at end
-4. Choose: new session or repeat same exercises
-
-### Word Processing:
-- **Tokenization**: Regex pattern `/[\p{L}\p{N}']+|[^\s\p{L}\p{N}]/gu`
-- **Punctuation Handling**: Auto-added after correct words
-- **Hotkeys**: Numbers 1-9, then letters a-z for quick selection
-- **Visual Feedback**: Color-coded for correct/incorrect/hint states
-
-### Settings System:
-- **Master Prompt**: Stored in localStorage
-- **Default Prompt**: Generates variable number of exercises (removed 7-exercise limit)
-- **Modal Interface**: Settings accessible via header button
+This process happens automatically on every "Generate Exercises" request. If the refinement step fails, the system gracefully falls back to using the user's original prompt.
 
 ## Recent Changes
-1. **Variable Exercise Support**: Removed hardcoded 7-exercise limit
-2. **Statistics System**: Added comprehensive session tracking
-3. **Session Completion**: Statistics page instead of infinite cycling
-4. **Time Tracking**: Start-to-finish session timing
-5. **Cache-Busting**: Dynamic versioning system for reliable updates
+- **Prompt Refinement**: Added a system to automatically refine user prompts for better exercise quality.
+- **Hint System**: Implemented a hint button and tracked hint usage.
+- **Statistics Page**: Added a comprehensive session statistics page.
+- **Local Word Scrambling**: Moved word scrambling from the AI to the frontend for instant feedback.
+- **Rate Limiting**: Added server-side rate limiting to prevent abuse.
+- **Observability**: Added a feature to view the last refined prompt.
+- **Airtable Integration**: Added persistent storage for topics and prompt versions.
 
 ## Development Workflow
 1. **Local Development**: `go run main.go` → http://localhost:8080
