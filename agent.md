@@ -1,12 +1,13 @@
 # German Conjunctions Trainer - Agent Documentation
 
 ## Project Overview
-A web-based spaced repetition system (SRS) for learning German conjunctions. Users complete exercises by constructing sentences from scrambled words, with statistics tracking and performance feedback.
+A web-based spaced repetition system (SRS) for learning German conjunctions. Users complete exercises by constructing sentences from scrambled words, with statistics tracking, performance feedback, and customizable topic management.
 
 ## Architecture
-- **Backend**: Go HTTP server with OpenAI API integration
-- **Frontend**: Vanilla JavaScript with Tailwind CSS
-- **Deployment**: Docker containerized
+- **Backend**: Go HTTP server with OpenAI API integration and Airtable storage
+- **Frontend**: Vanilla JavaScript with Tailwind CSS and topics management UI
+- **Storage**: Airtable database for persistent topics and prompt versioning
+- **Deployment**: Docker containerized with environment-based configuration
 
 ## File Structure
 ```
@@ -31,25 +32,63 @@ A web-based spaced repetition system (SRS) for learning German conjunctions. Use
 
 ### Environment Variables:
 - `OPENAI_API_KEY`: Required for AI exercise generation
+- `AIRTABLE_TOKEN`: Required for Airtable integration (Personal Access Token)
+- `AIRTABLE_BASE_ID`: Required for Airtable base identification  
 - `OPENAI_URL`: API endpoint (defaults to OpenAI)
 - `MODEL_NAME`: AI model (defaults to gpt-3.5-turbo-1106)
 - `PORT`: Server port (defaults to 8080)
 
 ### API Structure:
 ```go
+// Exercise Generation
 POST /api/generate
 {
-  "master_prompt": "string"
+  "topic_id": "string"
 }
-
 Response: OpenAI completion response (JSON)
+
+// Topics Management
+GET /api/topics - Get all topics
+POST /api/topics - Create new topic
+GET /api/topics/{id} - Get specific topic
+PUT /api/topics/{id} - Update topic prompt (creates version)
+DELETE /api/topics/{id} - Delete topic and versions
+
+// Version History
+GET /api/versions/{topicId} - Get version history
+POST /api/versions/{topicId}/restore/{versionId} - Restore version
 ```
+
+## Airtable Integration
+
+### Database Schema:
+**Topics Table:**
+- ID (Airtable record ID) 
+- Name (Single line text)
+- Prompt (Long text)
+- CreatedAt (Single line text - RFC3339)
+- UpdatedAt (Single line text - RFC3339)
+
+**PromptVersions Table:**
+- ID (Airtable record ID)
+- TopicID (Single line text - foreign key)
+- Prompt (Long text)
+- Version (Number - sequential)
+- CreatedAt (Single line text - RFC3339)
+
+### Key Features:
+- **Persistent Storage**: All topics and versions stored in Airtable
+- **Version Management**: Automatic versioning (last 10 versions kept)
+- **Permission Handling**: Graceful fallback if PromptVersions access unavailable
+- **Default Topics**: Auto-creation on first startup (Conjunctions, Verb+Preposition, Preterite vs Perfect)
+- **Duplicate Prevention**: Checks existing topics before creating defaults
 
 ## Frontend (app.js)
 ### Application State:
 ```javascript
 state = {
-  masterPrompt: '',           // User's custom prompt
+  currentTopicId: '',         // Selected topic for exercise generation
+  topics: [],                 // Array of available topics
   exercises: [],              // Array of exercise objects
   currentExerciseIndex: 0,    // Current position
   userSentence: [],           // User's constructed sentence
@@ -58,9 +97,17 @@ state = {
   hintsUsed: 0,              // Session hint count
   startTime: null,            // Session start timestamp
   sessionTime: 0,            // Total session duration
-  isSessionComplete: false    // Session completion flag
+  isSessionComplete: false,   // Session completion flag
+  editingTopicId: null        // Currently editing topic ID
 }
 ```
+
+### Topics Management UI:
+- **Topic Selector**: Dropdown to choose active topic for exercise generation
+- **Topics List**: View, edit, delete existing topics
+- **Topic Editor**: Modal for editing topic prompts with version history access
+- **Add Topic Form**: Create new topics with name and custom prompt
+- **Version History Modal**: View and restore previous prompt versions
 
 ### Exercise Object Structure:
 ```javascript
@@ -77,7 +124,12 @@ state = {
 - `handleWordClick()`: Processes word selection and validation
 - `handleSentenceCompletion()`: Manages exercise completion flow
 - `showStatisticsPage()`: Displays final statistics after session completion
-- `fetchExercises()`: Calls backend API to generate new exercises
+- `fetchExercises()`: Calls backend API to generate new exercises using selected topic
+- `loadTopics()`: Fetches all topics from Airtable backend
+- `createTopic()`: Creates new topic via API
+- `updateTopicPrompt()`: Updates topic prompt (creates new version)
+- `showVersionHistory()`: Displays version history modal for topic
+- `restoreVersion()`: Restores previous prompt version
 
 ### Statistics Features:
 - **Tracked Metrics**: Exercises completed, mistakes, hints used, accuracy, time spent, avg time per exercise
