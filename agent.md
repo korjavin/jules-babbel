@@ -105,11 +105,11 @@ state = {
 ```
 
 ### Topics Management UI:
-- **Topic Selector**: Dropdown to choose active topic for exercise generation
-- **Topics List**: View, edit, delete existing topics
-- **Topic Editor**: Modal for editing topic prompts with version history access
-- **Add Topic Form**: Create new topics with name and custom prompt
-- **Version History Modal**: View and restore previous prompt versions
+- **Topic Selector**: A searchable combobox in the header allows users to quickly find and select a topic for exercise generation.
+- **Topics List**: (Inside Settings Modal) View, edit, delete existing topics.
+- **Topic Editor**: (Inside Settings Modal) A modal for editing topic prompts with access to version history.
+- **Add Topic Form**: (Inside Settings Modal) A form to create new topics with a name and a custom prompt.
+- **Version History Modal**: (Inside Settings Modal) View and restore previous prompt versions for a selected topic.
 
 ### Exercise Object Structure:
 ```javascript
@@ -122,15 +122,15 @@ state = {
 ```
 
 ### Key Functions:
-- `renderExercise()`: Displays current exercise with scrambled words
-- `handleWordClick()`: Processes word selection and validation
-- `handleSentenceCompletion()`: Manages exercise completion flow
-- `showStatisticsPage()`: Displays final statistics after session completion
-- `fetchExercises()`: Calls backend API to generate new exercises using selected topic
-- `loadTopics()`: Fetches all topics from Airtable backend
-- `createTopic()`: Creates new topic via API
-- `updateTopicPrompt()`: Updates topic prompt (creates new version)
-- `showVersionHistory()`: Displays version history modal for topic
+- `renderExercise()`: Displays current exercise with scrambled words.
+- `handleWordClick()`: Processes word selection and validation.
+- `handleSentenceCompletion()`: Manages exercise completion flow.
+- `showStatisticsPage()`: Displays final statistics after session completion.
+- `fetchExercises()`: Calls backend API to generate new exercises using selected topic.
+- `loadTopics()`: Fetches all topics from Airtable backend.
+- `createTopic()`: Creates new topic via API.
+- `updateTopicPrompt()`: Updates topic prompt (creates new version).
+- `showVersionHistory()`: Displays version history modal for topic.
 - `restoreVersion()`: Restores a previous prompt version.
 - `handleHintClick()`: Provides a hint to the user by highlighting the next correct word.
 - `showStatisticsPage()`: Displays a detailed statistics page upon session completion.
@@ -151,6 +151,7 @@ The core of the application's exercise generation is the `refinePrompt` function
 This process happens automatically on every "Generate Exercises" request. If the refinement step fails, the system gracefully falls back to using the user's original prompt.
 
 ## Recent Changes
+- **Searchable Combobox for Topic Selection**: Replaced the simple topic dropdown with a searchable combobox in the header for a better user experience.
 - **Prompt Refinement**: Added a system to automatically refine user prompts for better exercise quality.
 - **Hint System**: Implemented a hint button and tracked hint usage.
 - **Statistics Page**: Added a comprehensive session statistics page.
