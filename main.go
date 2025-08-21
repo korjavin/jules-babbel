@@ -104,12 +104,10 @@ func initStorage() {
 	err := setupAirtableTables()
 	if err != nil {
 		log.Printf("Warning: Could not setup Airtable tables: %v", err)
-		log.Printf("Please manually create the following tables in your Airtable base:")
-		log.Printf("1. Table name: 'Topics'")
-		log.Printf("   Fields: Name (Single line text), Prompt (Long text), CreatedAt (Single line text), UpdatedAt (Single line text)")
-		log.Printf("2. Table name: 'PromptVersions'")
-		log.Printf("   Fields: TopicID (Single line text), Prompt (Long text), Version (Number), CreatedAt (Single line text)")
 	}
+	
+	// Check permissions
+	checkAirtablePermissions()
 }
 
 // Setup Airtable tables if they don't exist or verify their structure
@@ -152,11 +150,51 @@ func createAirtableTables() error {
 	return fmt.Errorf("manual table creation required")
 }
 
+// Check Airtable permissions for both tables
+func checkAirtablePermissions() {
+	log.Printf("Checking Airtable permissions...")
+	
+	// Test Topics table access
+	topicsTable := airtableClient.GetTable(airtableBaseID, topicsTableName)
+	_, err := topicsTable.GetRecords().Do()
+	if err != nil {
+		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+			log.Printf("❌ No access to 'Topics' table. Check token permissions.")
+		} else if strings.Contains(err.Error(), "status 404") {
+			log.Printf("❌ 'Topics' table not found. Please create it manually.")
+		} else {
+			log.Printf("⚠️  Topics table access error: %v", err)
+		}
+	} else {
+		log.Printf("✅ Topics table access: OK")
+	}
+	
+	// Test PromptVersions table access
+	versionsTable := airtableClient.GetTable(airtableBaseID, versionsTableName)
+	_, err = versionsTable.GetRecords().Do()
+	if err != nil {
+		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+			log.Printf("❌ No access to 'PromptVersions' table. Check token permissions.")
+			log.Printf("💡 Version history will be disabled but core functionality will work.")
+		} else if strings.Contains(err.Error(), "status 404") {
+			log.Printf("❌ 'PromptVersions' table not found. Please create it manually.")
+			log.Printf("💡 Version history will be disabled but core functionality will work.")
+		} else {
+			log.Printf("⚠️  PromptVersions table access error: %v", err)
+		}
+	} else {
+		log.Printf("✅ PromptVersions table access: OK")
+	}
+}
+
 // Initialize with default topics
 func initializeDefaultTopics() {
 	// Check if we already have topics (to avoid duplicating on restart)
 	existingTopics, err := getAllTopics()
-	if err == nil && len(existingTopics) > 0 {
+	if err != nil {
+		log.Printf("Warning: Could not check existing topics: %v", err)
+		log.Printf("Attempting to create default topics anyway...")
+	} else if len(existingTopics) > 0 {
 		log.Printf("Found %d existing topics, skipping default topic initialization", len(existingTopics))
 		return
 	}
@@ -432,6 +470,11 @@ func getVersions(topicID string) ([]*PromptVersion, error) {
 		Do()
 	
 	if err != nil {
+		// Check for permission errors
+		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+			log.Printf("No read access to PromptVersions table. Version history unavailable.")
+			return []*PromptVersion{}, nil // Return empty slice instead of error
+		}
 		return nil, fmt.Errorf("failed to get versions from Airtable: %v", err)
 	}
 	
@@ -500,8 +543,16 @@ func getVersion(versionID string) (*PromptVersion, error) {
 func addPromptVersion(topicID, prompt string) error {
 	// Get existing versions to determine next version number
 	versions, err := getVersions(topicID)
-	if err != nil && !strings.Contains(err.Error(), "status 404") {
-		return err
+	if err != nil {
+		// Check if it's a permission error
+		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+			log.Printf("No access to PromptVersions table. Please check Airtable token permissions.")
+			log.Printf("The token needs read/write access to both 'Topics' and 'PromptVersions' tables.")
+			return nil // Don't fail the topic creation due to version permission issues
+		}
+		if !strings.Contains(err.Error(), "status 404") {
+			return err
+		}
 	}
 	
 	nextVersion := 1
@@ -528,6 +579,12 @@ func addPromptVersion(topicID, prompt string) error {
 	
 	_, err = table.AddRecords(records)
 	if err != nil {
+		// Check for permission errors
+		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+			log.Printf("No write access to PromptVersions table. Skipping version creation.")
+			return nil // Don't fail the topic creation
+		}
+		
 		// If it failed due to unknown fields, try with minimal fields
 		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
 			log.Printf("CreatedAt field not found in PromptVersions, creating with minimal fields")
@@ -540,6 +597,11 @@ func addPromptVersion(topicID, prompt string) error {
 		}
 		
 		if err != nil {
+			// Final check for permissions before failing
+			if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+				log.Printf("Cannot create version due to permissions. Continuing without version tracking.")
+				return nil
+			}
 			return fmt.Errorf("failed to create version in Airtable: %v", err)
 		}
 	}
