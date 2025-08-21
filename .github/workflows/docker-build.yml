@@ -66,9 +66,10 @@ jobs:
         echo "  -e MODEL_NAME=gpt-3.5-turbo-1106 \\" >> $GITHUB_STEP_SUMMARY
         echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-          - name: 📝 Update and commit docker-compose.yml
-        # This step checks out the repo, updates the image tag, and pushes the change to deploy branch.
-        run: |
+
+    - name: 📝 Update and commit docker-compose.yml
+      # This step checks out the repo, updates the image tag, and pushes the change to deploy branch.
+      run: |
           # Configure Git with a user name and email.
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
@@ -84,9 +85,9 @@ jobs:
           git push origin deploy --force
 
     - name: 🚀 Trigger Portainer Redeploy Webhook
-        # This step runs AFTER the image is pushed and the git commit is done.
-        # It guarantees the image exists before Portainer tries to pull.
-        uses: distributhor/workflow-webhook@v3
-        with:
-          webhook_url: ${{ secrets.PORTAINER_REDEPLOY_HOOK }}
-          webhook_secret: "trigger"
+      # This step runs AFTER the image is pushed and the git commit is done.
+      # It guarantees the image exists before Portainer tries to pull.
+      uses: distributhor/workflow-webhook@v3
+      with:
+        webhook_url: ${{ secrets.PORTAINER_REDEPLOY_HOOK }}
+        webhook_secret: "trigger"
