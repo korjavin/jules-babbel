@@ -4,20 +4,21 @@ An interactive German language learning application that helps B1-level students
 
 ## Features
 
-- ✨ **Automatic Prompt Refinement**: Uses a meta-prompt to automatically improve user-defined prompts, leading to more creative and varied exercises.
-- 🎯 **Interactive Exercises**: Engaging word-scramble exercises with customizable topics.
-- 💡 **Hint System**: Provides hints for the next correct word, with usage tracking.
-- 📈 **Session Statistics**: Detailed performance tracking, including mistakes, hints used, accuracy, and time per exercise.
--  Lokal **Word Scrambling**: Ensures instant feedback by scrambling words locally.
-- ⌨️ **Keyboard Hotkeys**: Use keys 1-9 and a-z for quick word selection.
-- 🎨 **Automatic Punctuation**: Handles punctuation automatically for a smoother experience.
-- 🔐 **Secure Backend**: API keys are stored securely on the server-side.
-- 🌍 **Custom API Support**: Compatible with any OpenAI-compatible API.
-- 📱 **Responsive Design**: Fully functional on both desktop and mobile devices.
-- 🏷️ **Topics Management**: Create, edit, and delete grammar topics.
-- 📝 **Prompt Customization**: Tailor exercise generation prompts for each topic.
-- 🕒 **Version History**: Track and restore the last 10 versions of a prompt.
-- 💾 **Airtable Integration**: Persistently stores topics and prompt versions.
+- **Automatic Prompt Refinement**: Uses a meta-prompt to automatically improve user-defined prompts, leading to more creative and varied exercises.
+- **Searchable Topic Selector**: A searchable combobox in the header to easily find and switch between grammar topics.
+- **Interactive Exercises**: Engaging word-scramble exercises with customizable topics.
+- **Hint System**: Provides hints for the next correct word, with usage tracking.
+- **Session Statistics**: Detailed performance tracking, including mistakes, hints used, accuracy, and time per exercise.
+- **Local Word Scrambling**: Ensures instant feedback by scrambling words locally.
+- **Keyboard Hotkeys**: Use keys 1-9 and a-z for quick word selection.
+- **Automatic Punctuation**: Handles punctuation automatically for a smoother experience.
+- **Secure Backend**: API keys are stored securely on the server-side.
+- **Custom API Support**: Compatible with any OpenAI-compatible API.
+- **Responsive Design**: Fully functional on both desktop and mobile devices.
+- **Topics Management**: Create, edit, and delete grammar topics.
+- **Prompt Customization**: Tailor exercise generation prompts for each topic.
+- **Version History**: Track and restore the last 10 versions of a prompt.
+- **Airtable Integration**: Persistently stores topics and prompt versions.
 
 ## Prompt Refinement
 
@@ -65,12 +66,12 @@ docker run -p 8080:8080 \
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | ✅ Yes | - | Your OpenAI API key or compatible API key |
-| `AIRTABLE_TOKEN` | ✅ Yes | - | Your Airtable Personal Access Token |
-| `AIRTABLE_BASE_ID` | ✅ Yes | - | Your Airtable Base ID |
-| `OPENAI_URL` | ❌ No | `https://api.openai.com/v1` | API endpoint URL |
-| `MODEL_NAME` | ❌ No | `gpt-3.5-turbo-1106` | Model name to use |
-| `PORT` | ❌ No | `8080` | Port for the web server |
+| `OPENAI_API_KEY` | Yes | - | Your OpenAI API key or compatible API key |
+| `AIRTABLE_TOKEN` | Yes | - | Your Airtable Personal Access Token |
+| `AIRTABLE_BASE_ID` | Yes | - | Your Airtable Base ID |
+| `OPENAI_URL` | No | `https://api.openai.com/v1` | API endpoint URL |
+| `MODEL_NAME` | No | `gpt-3.5-turbo-1106` | Model name to use |
+| `PORT` | No | `8080` | Port for the web server |
 
 ## Airtable Setup
 
@@ -181,10 +182,10 @@ The backend includes rate limiting to prevent abuse. By default, it allows one r
 
 ## Security
 
-- ✅ API keys are stored server-side only
-- ✅ No sensitive data in browser localStorage
-- ✅ CORS headers properly configured
-- ✅ Non-root container user
+- API keys are stored server-side only
+- No sensitive data in browser localStorage
+- CORS headers properly configured
+- Non-root container user
 
 ## License
 
