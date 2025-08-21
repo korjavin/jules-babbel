@@ -18,6 +18,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_URL=${OPENAI_URL}
       - MODEL_NAME=${MODEL}
+      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
 
 networks:
   vaultwarden_default:
