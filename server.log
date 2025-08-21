@@ -1,0 +1,22 @@
+2025/08/21 21:39:29 Airtable integration initialized with base ID: dummy
+2025/08/21 21:39:29 Setting up Airtable tables...
+2025/08/21 21:39:29 Please manually create these tables in your Airtable base:
+2025/08/21 21:39:29
+2025/08/21 21:39:29 📋 Table 1: 'Topics'
+2025/08/21 21:39:29    • Name: Single line text
+2025/08/21 21:39:29    • Prompt: Long text
+2025/08/21 21:39:29    • CreatedAt: Single line text (optional)
+2025/08/21 21:39:29    • UpdatedAt: Single line text (optional)
+2025/08/21 21:39:29
+2025/08/21 21:39:29 📋 Table 2: 'PromptVersions'
+2025/08/21 21:39:29    • TopicID: Single line text
+2025/08/21 21:39:29    • Prompt: Long text
+2025/08/21 21:39:29    • Version: Number
+2025/08/21 21:39:29    • CreatedAt: Single line text (optional)
+2025/08/21 21:39:29
+2025/08/21 21:39:29 💡 Tip: The timestamp fields (CreatedAt, UpdatedAt) are optional.
+2025/08/21 21:39:29 💡 The app will work with just the required fields if timestamps are missing.
+2025/08/21 21:39:29
+2025/08/21 21:39:29 Could not auto-create tables: manual table creation required
+2025/08/21 21:39:29 Warning: Could not setup Airtable tables: manual table creation required
+2025/08/21 21:39:29 Checking Airtable permissions...
