@@ -987,7 +987,7 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 		}
 		
 		// Update topic with restored prompt (this will automatically create a new version)
-		topic, err := updateTopic(topicID, versionToRestore.Prompt)
+		topic, err := updateTopic(topicID, "", versionToRestore.Prompt)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
 			return
