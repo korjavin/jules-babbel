@@ -47,12 +47,14 @@ type UpdatePromptRequest struct {
 	Prompt string `json:"prompt"`
 }
 
+type ResponseFormat struct {
+	Type string `json:"type"`
+}
+
 type OpenAIRequest struct {
-	Model          string    `json:"model"`
-	Messages       []Message `json:"messages"`
-	ResponseFormat struct {
-		Type string `json:"type"`
-	} `json:"response_format"`
+	Model          string          `json:"model"`
+	Messages       []Message       `json:"messages"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
 type Message struct {
@@ -847,8 +849,8 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 				Content: finalPrompt,
 			},
 		},
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
 	}
-	openaiReq.ResponseFormat.Type = "json_object"
 
 	// Marshal request
 	reqBody, err := json.Marshal(openaiReq)
