@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=builder /app/main .
 
 # Create static directory and copy frontend files
-COPY index.html app.js ./static/
+COPY index.html app.js privacy.html ./static/
 
 # Make the binary executable and change ownership
 RUN chmod +x ./main && chown -R appuser:appuser /app
