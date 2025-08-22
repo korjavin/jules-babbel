@@ -170,9 +170,6 @@
                 <div id="topic-selector-container" class="relative flex-1 min-w-0">
                     <label for="topic-search" class="sr-only">Select Topic</label>
                     <input type="text" id="topic-search" class="w-full p-2.5 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none text-sm" placeholder="Search and select a topic...">
-                    <div id="topic-dropdown" class="absolute w-full mt-1 bg-white/95 backdrop-blur-md border border-gray-200 rounded-lg shadow-2xl hidden max-h-64 overflow-y-auto" style="z-index: 9999 !important;">
-                        <!-- Topic items will be dynamically inserted here -->
-                    </div>
                 </div>
                 <button id="generate-btn" class="btn-primary px-6 py-2.5 rounded-lg font-semibold whitespace-nowrap">Get Exercises</button>
             </div>
@@ -332,6 +329,11 @@
             </div>
             <pre id="last-refined-prompt-content" class="bg-gray-100 p-4 rounded-md text-sm whitespace-pre-wrap font-mono"></pre>
         </div>
+    </div>
+
+    <!-- Topic Dropdown - positioned outside stacking contexts -->
+    <div id="topic-dropdown" class="fixed w-full mt-1 bg-white/95 backdrop-blur-md border border-gray-200 rounded-lg shadow-2xl hidden max-h-64 overflow-y-auto" style="z-index: 9999 !important; position: fixed !important;">
+        <!-- Topic items will be dynamically inserted here -->
     </div>
 
     <script src="app.js?v=20250821001"></script>

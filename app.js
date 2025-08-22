@@ -856,9 +856,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Position dropdown function
+    function positionDropdown() {
+        const searchRect = topicSearch.getBoundingClientRect();
+        topicDropdown.style.left = searchRect.left + 'px';
+        topicDropdown.style.top = (searchRect.bottom + 4) + 'px';
+        topicDropdown.style.width = searchRect.width + 'px';
+    }
+
     // --- Event Listeners ---
     topicSearch.addEventListener('focus', () => {
         renderTopicDropdown(state.topics);
+        positionDropdown();
         topicDropdown.classList.remove('hidden');
     });
 
@@ -876,12 +885,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 200);
     });
 
+    // Reposition dropdown on window resize and scroll
+    window.addEventListener('resize', () => {
+        if (!topicDropdown.classList.contains('hidden')) {
+            positionDropdown();
+        }
+    });
+    
+    window.addEventListener('scroll', () => {
+        if (!topicDropdown.classList.contains('hidden')) {
+            positionDropdown();
+        }
+    });
+    
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!topicSearch.contains(e.target) && !topicDropdown.contains(e.target)) {
+            topicDropdown.classList.add('hidden');
+        }
+    });
+
     topicSearch.addEventListener('input', () => {
         const searchTerm = topicSearch.value.toLowerCase();
         const filteredTopics = state.topics.filter(topic =>
             topic.name.toLowerCase().includes(searchTerm)
         );
         renderTopicDropdown(filteredTopics);
+        if (!topicDropdown.classList.contains('hidden')) {
+            positionDropdown();
+        }
     });
 
     loginBtn.addEventListener('click', () => {
