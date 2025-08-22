@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="16" cy="16" r="15" fill="url(#bgGrad)" stroke="#fff" stroke-width="1"/>
+  
+  <!-- Book icon simplified for small size -->
+  <rect x="8" y="8" width="16" height="16" rx="2" fill="#10B981" stroke="#fff" stroke-width="1"/>
+  <rect x="9" y="9" width="14" height="14" rx="1" fill="#fff"/>
+  
+  <!-- Simple "DE" text -->
+  <text x="16" y="19" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="#4F46E5" text-anchor="middle">DE</text>
+</svg>
