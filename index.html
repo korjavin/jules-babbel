@@ -83,19 +83,12 @@
         }
     </style>
 </head>
-<body class="antialiased">
+<body class="antialiased flex flex-col min-h-screen">
 
     <header class="bg-white shadow-sm">
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-6">
                 <h1 class="text-2xl font-bold text-gray-800">German Grammar Trainer</h1>
-                <div id="topic-selector-container" class="relative">
-                    <label for="topic-search" class="sr-only">Select Topic</label>
-                    <input type="text" id="topic-search" class="w-64 p-2 border rounded-md" placeholder="Search and select a topic...">
-                    <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
-                        <!-- Topic items will be dynamically inserted here -->
-                    </div>
-                </div>
             </div>
             <div class="flex items-center space-x-6">
                 <div id="stats-mistakes" class="text-lg">Mistakes: 0</div>
@@ -106,6 +99,23 @@
             </div>
         </nav>
     </header>
+
+    <div id="topic-selection-section" class="bg-gray-50 py-8">
+        <div class="container mx-auto px-6 text-center">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Choose Your Focus</h2>
+            <p class="text-gray-600 mb-4">Select a topic below to start practicing. You can change topics at any time in the settings.</p>
+            <div id="topic-selector-container" class="relative max-w-md mx-auto">
+                <label for="topic-search" class="sr-only">Select Topic</label>
+                <input type="text" id="topic-search" class="w-full p-3 border rounded-full shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" placeholder="Search and select a topic...">
+                <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
+                    <!-- Topic items will be dynamically inserted here -->
+                </div>
+            </div>
+            <div class="mt-4">
+                <button id="generate-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Get Exercises</button>
+            </div>
+        </div>
+    </div>
 
     <main class="container mx-auto px-6 py-12">
         <div id="app" class="max-w-3xl mx-auto">
@@ -131,7 +141,10 @@
                         <div id="constructed-sentence" class="flex flex-wrap gap-2"></div>
                     </div>
 
-                    <p class="text-lg text-gray-600 mb-4">Scrambled Words:</p>
+                    <div class="flex justify-between items-center mb-4">
+                        <p class="text-lg text-gray-600">Scrambled Words:</p>
+                        <button id="hint-btn" class="btn-primary px-4 py-2 rounded-lg font-semibold text-sm">Hint</button>
+                    </div>
                     <div id="scrambled-words-container" class="flex flex-wrap gap-2 justify-center">
                         <!-- Word buttons will be dynamically inserted here -->
                     </div>
@@ -144,8 +157,7 @@
 
             <!-- Controls -->
             <div id="controls-container" class="text-center">
-                <button id="hint-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Hint</button>
-                <button id="generate-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Generate More Exercises</button>
+
             </div>
 
         </div>
@@ -238,9 +250,10 @@
 
     <script src="app.js?v=20250821001"></script>
 
-    <footer class="bg-white mt-12">
-        <div class="container mx-auto px-6 py-4 text-center text-gray-500">
-            <a href="/privacy.html" class="hover:text-gray-700">Privacy Policy</a>
+    <footer class="bg-white mt-auto">
+        <div class="container mx-auto px-6 py-6 text-center text-gray-600">
+            <p>&copy; 2024 German Grammar Trainer. All rights reserved.</p>
+            <a href="/privacy.html" class="text-blue-600 hover:text-blue-800">Privacy Policy</a>
         </div>
     </footer>
 </body>
