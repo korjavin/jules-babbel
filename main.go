@@ -6,11 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"io"
 	"log"
+	mrand "math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -285,7 +286,7 @@ func checkAirtablePermissions() {
 
 func checkTableAccess(tableName string, required bool, consequence string) {
 	table := airtableClient.GetTable(airtableBaseID, tableName)
-	_, err := table.GetRecords().WithMaxRecords(1).Do() // Check with 1 record to be efficient
+	_, err := table.GetRecords().Do() // Check without max records for compatibility
 
 	if err != nil {
 		prefix := "⚠️"
@@ -1276,7 +1277,7 @@ func getRandomExercises(exercises []*Exercise, count int) []*Exercise {
 	if len(exercises) <= count {
 		return exercises
 	}
-	rand.Shuffle(len(exercises), func(i, j int) {
+	mrand.Shuffle(len(exercises), func(i, j int) {
 		exercises[i], exercises[j] = exercises[j], exercises[i]
 	})
 	return exercises[:count]

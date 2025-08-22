@@ -4,7 +4,10 @@ An interactive German language learning application that helps B1-level students
 
 ## Features
 
-- **Automatic Prompt Refinement**: Uses a meta-prompt to automatically improve user-defined prompts, leading to more creative and varied exercises.
+- **Exercise Caching**: Generated exercises are cached for instant access, reducing API costs and wait times.
+- **Spaced Repetition System (SRS)**: For logged-in users, exercises are presented using an SRS algorithm to optimize learning and retention.
+- **On-Demand Generation**: New exercises are generated automatically only when the cache is empty or a user has seen all available exercises.
+- **Automatic Prompt Refinement**: Uses a meta-prompt to improve user-defined prompts during on-demand generation, leading to more creative and varied exercises.
 - **Searchable Topic Selector**: A searchable combobox in the header to easily find and switch between grammar topics.
 - **Interactive Exercises**: Engaging word-scramble exercises with customizable topics.
 - **Hint System**: Provides hints for the next correct word, with usage tracking.
@@ -18,8 +21,8 @@ An interactive German language learning application that helps B1-level students
 - **Topics Management**: Create, edit, and delete grammar topics.
 - **Prompt Customization**: Tailor exercise generation prompts for each topic.
 - **Version History**: Track and restore the last 10 versions of a prompt.
-- **Airtable Integration**: Persistently stores topics and prompt versions.
-- **Optional Google Login**: Allows users to log in with their Google account to save their statistics and settings.
+- **Airtable Integration**: Persistently stores topics, versions, exercises, and user progress.
+- **Optional Google Login**: Allows users to log in with their Google account to enable the SRS feature and save settings.
 
 ## Optional Google Login
 This application provides an optional login feature using Google OAuth 2.0. When a user logs in, the application will store their statistics and settings, allowing them to track their progress across sessions. This feature is entirely optional and the application is fully functional without logging in.
@@ -106,16 +109,29 @@ Create these two tables in your Airtable base:
 - `Version` - Number (required)
 - `CreatedAt` - Single line text (optional)
 
-**Table 3: "Users"**
+**Table 3: "Exercises"**
+- `TopicID` - Single line text (Link to `Topics` recommended)
+- `PromptHash` - Single line text
+- `ExerciseJSON` - Long text
+- `CreatedAt` - Created time
+
+**Table 4: "Users"**
 - `GoogleID` - Single line text (required)
 
-**Table 4: "UserStats"**
+**Table 5: "UserStats"**
 - `UserID` - Single line text (required)
 - `TotalExercises` - Number (required)
 - `TotalMistakes` - Number (required)
 - `TotalHints` - Number (required)
 - `TotalTime` - Number (required)
 - `LastTopicID` - Single line text (optional)
+
+**Table 6: "UserExerciseViews"**
+- `UserID` - Single line text (Link to `Users` recommended)
+- `ExerciseID` - Single line text (Link to `Exercises` recommended)
+- `LastViewed` - Date and time
+- `RepetitionCounter` - Number (Default to 0)
+- `NextReview` - Formula (Optional, for debugging). Formula: `DATEADD({LastViewed}, POWER({RepetitionCounter}, 2), 'days')`
 
 ### 3. Generate Personal Access Token
 

@@ -1,12 +1,12 @@
 # German Conjunctions Trainer - Agent Documentation
 
 ## Project Overview
-A web-based application for learning German grammar. It features interactive word-scramble exercises, customizable topics, and a unique prompt refinement system to ensure high-quality, varied content. The application tracks user performance and provides session statistics.
+A web-based application for learning German grammar. It features interactive word-scramble exercises, customizable topics, and a unique prompt refinement system to ensure high-quality, varied content. The application now includes exercise caching and a Spaced Repetition System (SRS) for authenticated users to optimize learning. It also tracks user performance and provides session statistics.
 
 ## Architecture
-- **Backend**: Go HTTP server featuring an AI-powered prompt refinement system, API proxying to OpenAI, and Airtable integration for data persistence.
+- **Backend**: Go HTTP server featuring an on-demand, AI-powered exercise generation system with prompt refinement. It handles exercise caching, SRS logic, and Airtable integration for data persistence.
 - **Frontend**: Vanilla JavaScript with Tailwind CSS, providing a responsive UI for exercises and topics management.
-- **Storage**: Airtable for storing grammar topics and their version history.
+- **Storage**: Airtable for storing grammar topics, their version history, cached exercises, and user SRS data.
 - **Deployment**: Docker container with environment-based configuration for easy deployment.
 
 ## File Structure
@@ -25,11 +25,13 @@ A web-based application for learning German grammar. It features interactive wor
 
 ## Backend (main.go)
 ### Key Components:
-- **Prompt Refinement**: The `refinePrompt` function uses a `metaPrompt` to instruct an LLM to improve user-provided prompts, enhancing exercise quality.
+- **Exercise Caching**: The system caches all generated exercises in an Airtable table to reduce latency and API costs.
+- **Spaced Repetition System (SRS)**: For authenticated users, the backend calculates which exercises are due for review based on their viewing history.
+- **On-Demand Generation**: The `generateAndCacheExercises` function is triggered only when the cache is insufficient for a user's request. It uses a `metaPrompt` to refine the topic prompt before calling the OpenAI API.
+- **API Endpoint `/api/exercises`**: The primary endpoint for the frontend. It orchestrates fetching from cache, applying SRS logic, and triggering generation.
 - **Static File Serving**: Custom handlers serve `index.html` with dynamic cache-busting and `app.js` with long-term caching.
-- **API Proxy**: The `/api/generate` endpoint securely proxies requests to the OpenAI API, using the refined prompt.
 - **Rate Limiting**: IP-based rate limiting (1 request every 3 seconds) to prevent abuse.
-- **Airtable Integration**: Manages CRUD operations for topics and prompt versions.
+- **Airtable Integration**: Manages CRUD operations for topics, versions, exercises, and user view data.
 
 ### Environment Variables:
 - `OPENAI_API_KEY`: Required for AI exercise generation.
@@ -41,10 +43,15 @@ A web-based application for learning German grammar. It features interactive wor
 
 ### API Structure:
 ```go
-// Exercise Generation
-POST /api/generate
+// Exercise Fetching & Generation
+POST /api/exercises
 { "topic_id": "string" }
-// -> Returns OpenAI completion response (JSON)
+// -> Returns a JSON object with an array of exercises, either from cache or newly generated.
+
+// Exercise Generation (Backend-only)
+POST /api/generate
+// -> This endpoint is still available but should not be called directly from the frontend.
+// -> It is used for on-demand generation initiated by the /api/exercises endpoint.
 
 // Topics Management
 GET    /api/topics      // Get all topics
@@ -78,12 +85,28 @@ GET /api/last-refined-prompt // Get the most recently used refined prompt
 - Version (Number - sequential)
 - CreatedAt (Single line text - RFC3339)
 
+**Exercises Table:**
+- ID (Airtable record ID)
+- TopicID (Single line text, Linked to Topics)
+- PromptHash (Single line text)
+- ExerciseJSON (Long text)
+- CreatedAt (Created time)
+
+**UserExerciseViews Table:**
+- ID (Airtable record ID)
+- UserID (Single line text, Linked to Users)
+- ExerciseID (Single line text, Linked to Exercises)
+- LastViewed (Date and time)
+- RepetitionCounter (Number)
+- NextReview (Formula)
+
 ### Key Features:
-- **Persistent Storage**: All topics and versions stored in Airtable
-- **Version Management**: Automatic versioning (last 10 versions kept)
-- **Permission Handling**: Graceful fallback if PromptVersions access unavailable
-- **Default Topics**: Auto-creation on first startup (Conjunctions, Verb+Preposition, Preterite vs Perfect)
-- **Duplicate Prevention**: Checks existing topics before creating defaults
+- **Persistent Storage**: All topics, versions, exercises, and user data stored in Airtable.
+- **Exercise Caching**: Serves as the cache for all generated exercises.
+- **SRS Tracking**: Stores user-specific exercise view history to enable SRS.
+- **Version Management**: Automatic versioning for topic prompts (last 10 versions kept).
+- **Permission Handling**: Graceful fallback if tables are missing or permissions are incorrect.
+- **Default Topics**: Auto-creation on first startup.
 
 ## Frontend (app.js)
 ### Application State:
@@ -126,7 +149,7 @@ state = {
 - `handleWordClick()`: Processes word selection and validation.
 - `handleSentenceCompletion()`: Manages exercise completion flow.
 - `showStatisticsPage()`: Displays final statistics after session completion.
-- `fetchExercises()`: Calls backend API to generate new exercises using selected topic.
+- `fetchExercises()`: Calls the new `/api/exercises` backend endpoint to get a batch of exercises. The backend handles whether to serve from cache or generate new ones.
 - `loadTopics()`: Fetches all topics from Airtable backend.
 - `createTopic()`: Creates new topic via API.
 - `updateTopicPrompt()`: Updates topic prompt (creates new version).
@@ -141,16 +164,18 @@ state = {
 - **Statistics Tracking**: The application tracks mistakes, hints used, and session time. A detailed statistics page is shown at the end of a session.
 - **Observability**: A "View Last Refined Prompt" button allows the user to see the prompt that was actually sent to the AI, which is useful for debugging.
 
-## Prompt Refinement
-The core of the application's exercise generation is the `refinePrompt` function in `main.go`. This function is designed to improve the quality and variety of exercises by using a two-step AI process:
+## On-Demand Prompt Refinement & Generation
+The application uses an on-demand generation system. The `refinePrompt` function is a key part of this, designed to improve exercise quality by using a two-step AI process:
 
-1.  **Meta-Prompt**: A hardcoded `metaPrompt` is used to wrap the user's custom prompt. This meta-prompt instructs the language model to act as a "prompt engineering assistant" and refine the user's prompt based on a set of rules (e.g., enhance instructions, add examples, maintain the JSON schema).
-2.  **Refined Prompt Generation**: The combined prompt (meta-prompt + user's prompt) is sent to the AI. The AI's response is the *refined prompt*.
-3.  **Exercise Generation**: This new, refined prompt is then used to call the AI again to generate the actual exercises in the required JSON format.
+1.  **Meta-Prompt**: A hardcoded `metaPrompt` wraps the user's custom prompt, instructing the language model to act as a "prompt engineering assistant" and refine it.
+2.  **Refined Prompt Generation**: The combined prompt is sent to the AI, which returns a *refined prompt*.
+3.  **Exercise Generation**: This new, refined prompt is then used to generate the actual exercises in the required JSON format.
 
-This process happens automatically on every "Generate Exercises" request. If the refinement step fails, the system gracefully falls back to using the user's original prompt.
+This entire process is now triggered **only when the exercise cache is insufficient**. It does not run on every user click of the "Generate Exercises" button, making the system much more efficient. If the refinement step fails, the system gracefully falls back to using the user's original prompt for generation.
 
 ## Recent Changes
+- **Exercise Caching and SRS**: Implemented a full caching layer and Spaced Repetition System to manage exercises and optimize learning.
+- **On-Demand Generation**: Changed the exercise generation from a per-request model to an on-demand system triggered by the backend logic.
 - **Searchable Combobox for Topic Selection**: Replaced the simple topic dropdown with a searchable combobox in the header for a better user experience.
 - **Prompt Refinement**: Added a system to automatically refine user prompts for better exercise quality.
 - **Hint System**: Implemented a hint button and tracked hint usage.
