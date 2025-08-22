@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackArea = document.getElementById('feedback-area');
     const correctSentenceDisplay = document.getElementById('correct-sentence-display');
     const exerciseCounter = document.getElementById('exercise-counter');
+    const progressBar = document.getElementById('progress-bar');
+    const progressPercentage = document.getElementById('progress-percentage');
     const emptyStateContainer = document.getElementById('empty-state-container');
 
     const statsMistakesEl = document.getElementById('stats-mistakes');
@@ -123,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStats() {
-        statsMistakesEl.textContent = `Mistakes: ${state.mistakes}`;
-        statsHintsEl.textContent = `Hints Used: ${state.hintsUsed}`;
+        statsMistakesEl.textContent = `${state.mistakes}`;
+        statsHintsEl.textContent = `${state.hintsUsed}`;
     }
 
     // --- Exercise Rendering and Logic ---
@@ -150,6 +152,15 @@ document.addEventListener('DOMContentLoaded', () => {
         addPunctuationIfNeeded(exercise, state.userSentence);
 
         exerciseCounter.textContent = `${state.currentExerciseIndex + 1} / ${state.exercises.length}`;
+        
+        // Update progress bar
+        const progress = ((state.currentExerciseIndex + 1) / state.exercises.length) * 100;
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
+        if (progressPercentage) {
+            progressPercentage.textContent = `${Math.round(progress)}%`;
+        }
 
         // Reset UI
         englishHintEl.textContent = exercise.english_hint;
@@ -163,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.userSentence.forEach(w => {
                 const span = document.createElement('span');
                 span.textContent = w;
-                span.className = 'px-2 py-1 bg-gray-100 rounded mr-1';
+                span.className = 'px-3 py-2 bg-white/80 backdrop-blur-sm rounded-lg mr-2 font-medium text-gray-700 shadow-sm';
                 constructedSentenceEl.appendChild(span);
             });
         } else {
@@ -228,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.userSentence.forEach(w => {
                 const span = document.createElement('span');
                 span.textContent = w;
-                span.className = 'px-2 py-1 bg-gray-100 rounded mr-1';
+                span.className = 'px-3 py-2 bg-white/80 backdrop-blur-sm rounded-lg mr-2 font-medium text-gray-700 shadow-sm';
                 constructedSentenceEl.appendChild(span);
             });
 

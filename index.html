@@ -9,45 +9,57 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #FDFBF8;
-            color: #4A4A4A;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #2D3748;
         }
         .btn-primary {
-            background-color: #A58D78;
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
             color: #FFFFFF;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
         }
         .btn-primary:hover {
-            background-color: #8E7661;
+            background: linear-gradient(135deg, #4338CA 0%, #6D28D9 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(79, 70, 229, 0.6);
         }
         .btn-word {
-            background-color: #FFFFFF;
-            border: 1px solid #D1C4B7;
-            color: #4A4A4A;
-            transition: all 0.2s;
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #E2E8F0;
+            color: #2D3748;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
         .btn-word:hover {
-            background-color: #F7F1EA;
-            border-color: #A58D78;
+            background: rgba(255, 255, 255, 1);
+            border-color: #4F46E5;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(79, 70, 229, 0.2);
         }
         .card {
-            background-color: #FFFFFF;
-            border: 1px solid #EAEAEA;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         }
         .correct-answer-feedback {
             color: #34D399; /* Tailwind green-400 */
         }
         .incorrect-answer-feedback {
             animation: shake 0.5s;
-            background-color: #F87171; /* Tailwind red-400 */
-            border-color: #EF4444; /* Tailwind red-500 */
+            background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+            border-color: #DC2626;
             color: white;
+            box-shadow: 0 8px 15px rgba(239, 68, 68, 0.4);
         }
         .hint-word {
-            background-color: #60A5FA; /* Tailwind blue-400 */
-            border-color: #3B82F6; /* Tailwind blue-600 */
+            background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+            border-color: #1D4ED8;
             color: white;
+            box-shadow: 0 8px 15px rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
         }
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
@@ -58,18 +70,31 @@
             position: absolute;
             top: -8px;
             left: -8px;
-            background-color: #A58D78;
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
             color: white;
-            font-size: 10px;
-            font-weight: 600;
-            width: 18px;
-            height: 18px;
+            font-size: 11px;
+            font-weight: 700;
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             border: 2px solid #FFFFFF;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
+        }
+        @media (max-width: 640px) {
+            .hotkey-indicator {
+                width: 24px;
+                height: 24px;
+                font-size: 12px;
+                top: -10px;
+                left: -10px;
+            }
+            .btn-word {
+                padding: 12px 16px;
+                font-size: 16px;
+            }
         }
         .btn-word {
             position: relative;
@@ -85,25 +110,41 @@
 </head>
 <body class="antialiased flex flex-col min-h-screen">
 
-    <header class="bg-white shadow-sm">
-        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+    <header class="bg-white/10 backdrop-blur-lg border-b border-white/20 shadow-lg">
+        <nav class="container mx-auto px-6 py-6 flex justify-between items-center">
             <div class="flex items-center space-x-6">
-                <h1 class="text-2xl font-bold text-gray-800">German Grammar Trainer</h1>
+                <h1 class="text-3xl font-bold text-white drop-shadow-lg">German Grammar Trainer</h1>
             </div>
-            <div class="flex items-center space-x-6">
-                <div id="stats-mistakes" class="text-lg">Mistakes: 0</div>
-                <div id="stats-hints" class="text-lg">Hints Used: 0</div>
-                <button id="login-btn" class="btn-primary px-4 py-2 rounded-md">Login with Google</button>
-                <button id="logout-btn" class="btn-primary px-4 py-2 rounded-md hidden">Logout</button>
-                <button id="settings-btn" class="btn-primary px-4 py-2 rounded-md">Settings</button>
+            <div class="flex items-center space-x-8">
+                <div class="flex items-center space-x-6">
+                    <div class="flex items-center space-x-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                        <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span id="stats-mistakes" class="text-lg font-semibold text-white">0</span>
+                        <span class="text-sm text-white/80">Mistakes</span>
+                    </div>
+                    <div class="flex items-center space-x-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                        <svg class="w-5 h-5 text-blue-300" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
+                        </svg>
+                        <span id="stats-hints" class="text-lg font-semibold text-white">0</span>
+                        <span class="text-sm text-white/80">Hints</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="login-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold">Login with Google</button>
+                    <button id="logout-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold hidden">Logout</button>
+                    <button id="settings-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold">Settings</button>
+                </div>
             </div>
         </nav>
     </header>
 
-    <div id="topic-selection-section" class="bg-gray-50 py-8">
+    <div id="topic-selection-section" class="bg-white/10 backdrop-blur-lg border-b border-white/20 py-12">
         <div class="container mx-auto px-6 text-center">
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Choose Your Focus</h2>
-            <p class="text-gray-600 mb-4">Select a topic below to start practicing. You can change topics at any time in the settings.</p>
+            <h2 class="text-3xl font-bold text-white mb-4 drop-shadow-lg">Choose Your Focus</h2>
+            <p class="text-white/90 mb-8 text-lg">Select a topic below to start practicing. You can change topics at any time in the settings.</p>
             <div id="topic-selector-container" class="relative max-w-md mx-auto">
                 <label for="topic-search" class="sr-only">Select Topic</label>
                 <input type="text" id="topic-search" class="w-full p-3 border rounded-full shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" placeholder="Search and select a topic...">
@@ -111,8 +152,8 @@
                     <!-- Topic items will be dynamically inserted here -->
                 </div>
             </div>
-            <div class="mt-4">
-                <button id="generate-btn" class="btn-primary px-6 py-3 rounded-lg font-semibold text-lg">Get Exercises</button>
+            <div class="mt-8">
+                <button id="generate-btn" class="btn-primary px-8 py-4 rounded-xl font-bold text-xl">Get Exercises</button>
             </div>
         </div>
     </div>
@@ -122,10 +163,29 @@
 
             <!-- Exercise Display -->
             <div id="exercise-container" class="card rounded-lg p-6 md:p-8 mb-8">
-                <div id="exercise-counter" class="text-right text-gray-500 mb-2"></div>
+                <div class="flex justify-between items-center mb-6">
+                    <div id="exercise-counter" class="text-lg font-semibold text-gray-700 bg-white/50 backdrop-blur-sm rounded-lg px-4 py-2"></div>
+                    <div id="progress-bar-container" class="flex-1 mx-6">
+                        <div class="bg-gray-200/50 rounded-full h-3 overflow-hidden">
+                            <div id="progress-bar" class="bg-gradient-to-r from-green-400 to-blue-500 h-full rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="text-sm font-medium text-gray-600 bg-white/50 backdrop-blur-sm rounded-lg px-3 py-1">
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                </div>
                 <div id="loading-spinner" class="text-center hidden">
-                    <p class="text-lg text-gray-600">Generating new exercises...</p>
-                    <p id="timer" class="text-lg text-gray-600"></p>
+                    <div class="flex flex-col items-center space-y-4">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+                        <p class="text-xl font-semibold text-gray-700">Generating new exercises...</p>
+                        <div class="flex items-center space-x-2 bg-white/80 backdrop-blur-sm rounded-lg px-4 py-2">
+                            <svg class="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                            </svg>
+                            <p id="timer" class="text-lg font-bold text-gray-700"></p>
+                            <span class="text-sm text-gray-600">seconds</span>
+                        </div>
+                    </div>
                 </div>
                 <div id="empty-state-container" class="text-center hidden">
                     <p class="text-lg text-gray-600 mb-2">Welcome!</p>
@@ -136,16 +196,21 @@
                     <p class="text-lg text-gray-600 mb-2">English Hint:</p>
                     <p id="english-hint" class="text-2xl font-semibold text-gray-800 mb-6">Loading exercise...</p>
 
-                    <div id="answer-area" class="card rounded-md p-4 mb-6 min-h-[60px] border-dashed border-2 flex items-center justify-center">
-                        <p id="answer-prompt" class="text-gray-500">Click the words below to form the sentence.</p>
-                        <div id="constructed-sentence" class="flex flex-wrap gap-2"></div>
+                    <div id="answer-area" class="bg-gradient-to-r from-blue-50/50 to-purple-50/50 backdrop-blur-sm rounded-xl p-6 mb-8 min-h-[80px] border-2 border-blue-200/50 flex items-center justify-center transition-all duration-300">
+                        <p id="answer-prompt" class="text-gray-600 font-medium text-lg">Click the words below to form the sentence.</p>
+                        <div id="constructed-sentence" class="flex flex-wrap gap-3"></div>
                     </div>
 
-                    <div class="flex justify-between items-center mb-4">
-                        <p class="text-lg text-gray-600">Scrambled Words:</p>
-                        <button id="hint-btn" class="btn-primary px-4 py-2 rounded-lg font-semibold text-sm">Hint</button>
+                    <div class="flex justify-between items-center mb-6">
+                        <p class="text-xl font-semibold text-gray-700">Scrambled Words:</p>
+                        <button id="hint-btn" class="btn-primary px-6 py-3 rounded-xl font-bold text-sm flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
+                            </svg>
+                            <span>Hint</span>
+                        </button>
                     </div>
-                    <div id="scrambled-words-container" class="flex flex-wrap gap-2 justify-center">
+                    <div id="scrambled-words-container" class="flex flex-wrap gap-3 justify-center">
                         <!-- Word buttons will be dynamically inserted here -->
                     </div>
 
