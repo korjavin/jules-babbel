@@ -100,6 +100,20 @@
         </nav>
     </header>
 
+    <div id="topic-selection-section" class="bg-gray-50 py-8">
+        <div class="container mx-auto px-6 text-center">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Choose Your Focus</h2>
+            <p class="text-gray-600 mb-4">Select a topic below to start practicing. You can change topics at any time in the settings.</p>
+            <div id="topic-selector-container" class="relative max-w-md mx-auto">
+                <label for="topic-search" class="sr-only">Select Topic</label>
+                <input type="text" id="topic-search" class="w-full p-3 border rounded-full shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" placeholder="Search and select a topic...">
+                <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
+                    <!-- Topic items will be dynamically inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <main class="container mx-auto px-6 py-12">
         <div id="app" class="max-w-3xl mx-auto">
 
@@ -231,19 +245,6 @@
 
     <script src="app.js?v=20250821001"></script>
 
-    <div id="topic-selection-section" class="bg-gray-50 py-8">
-        <div class="container mx-auto px-6 text-center">
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Choose Your Focus</h2>
-            <p class="text-gray-600 mb-4">Select a topic below to start practicing. You can change topics at any time in the settings.</p>
-            <div id="topic-selector-container" class="relative max-w-md mx-auto">
-                <label for="topic-search" class="sr-only">Select Topic</label>
-                <input type="text" id="topic-search" class="w-full p-3 border rounded-full shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" placeholder="Search and select a topic...">
-                <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
-                    <!-- Topic items will be dynamically inserted here -->
-                </div>
-            </div>
-        </div>
-    </div>
     <footer class="bg-white mt-auto">
         <div class="container mx-auto px-6 py-6 text-center text-gray-600">
             <p>&copy; 2024 German Grammar Trainer. All rights reserved.</p>
