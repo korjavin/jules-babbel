@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +19,9 @@ import (
 	"time"
 
 	"github.com/mehanizm/airtable"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/oauth2/v2"
 	"golang.org/x/time/rate"
 )
 
@@ -43,6 +49,22 @@ type PromptVersion struct {
 type TopicRequest struct {
 	Name   string `json:"name"`
 	Prompt string `json:"prompt"`
+}
+
+type User struct {
+	ID         string `json:"id"`
+	GoogleID   string `json:"google_id"`
+	AirtableID string `json:"airtable_id"`
+}
+
+type UserStats struct {
+	UserID             string `json:"user_id"`
+	TotalExercises     int    `json:"total_exercises"`
+	TotalMistakes      int    `json:"total_mistakes"`
+	TotalHints         int    `json:"total_hints"`
+	TotalTime          int    `json:"total_time"`
+	LastTopicID        string `json:"last_topic_id"`
+	AirtableRecordID   string `json:"airtable_record_id"`
 }
 
 type UpdateTopicRequest struct {
@@ -87,10 +109,18 @@ var (
 	// Table names
 	topicsTableName   = "Topics"
 	versionsTableName = "PromptVersions"
+	usersTableName    = "Users"
+	userStatsTableName = "UserStats"
 
 	// For observability
 	lastRefinedPrompt      string
 	lastRefinedPromptMutex sync.RWMutex
+)
+
+// Google OAuth2 configuration
+var (
+	googleOauthConfig *oauth2.Config
+	oauthStateString  string
 )
 
 
@@ -658,9 +688,37 @@ func addPromptVersion(topicID, prompt string) error {
 	return nil
 }
 
+func initOAuth() {
+	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
+	googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	redirectURL := os.Getenv("GOOGLE_REDIRECT_URL")
+
+	if googleClientID == "" || googleClientSecret == "" || redirectURL == "" {
+		log.Println("Warning: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, or GOOGLE_REDIRECT_URL not set. Google login will be disabled.")
+		googleOauthConfig = nil
+		return
+	}
+
+	b := make([]byte, 16)
+	rand.Read(b)
+	oauthStateString = base64.URLEncoding.EncodeToString(b)
+
+	googleOauthConfig = &oauth2.Config{
+		RedirectURL:  redirectURL,
+		ClientID:     googleClientID,
+		ClientSecret: googleClientSecret,
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
+		Endpoint:     google.Endpoint,
+	}
+	log.Println("Google OAuth initialized.")
+}
+
 func main() {
 	// Initialize storage backend
 	initStorage()
+
+	// Initialize Google OAuth
+	initOAuth()
 	
 	// Initialize default topics
 	initializeDefaultTopics()
@@ -686,9 +744,10 @@ func main() {
 
 	// Custom handler for index.html with cache-busting
 	http.HandleFunc("/", handleIndex)
-	
+
 	// Serve static files with cache headers
 	http.HandleFunc("/app.js", handleJS)
+	http.HandleFunc("/privacy.html", handlePrivacy)
 	
 	// API endpoints
 	http.HandleFunc("/api/generate", handleGenerate)
@@ -696,6 +755,16 @@ func main() {
 	http.HandleFunc("/api/topics/", handleTopicByID)
 	http.HandleFunc("/api/versions/", handleVersions)
 	http.HandleFunc("/api/last-refined-prompt", handleGetLastRefinedPrompt)
+
+	// Auth endpoints
+	http.HandleFunc("/auth/google/login", handleGoogleLogin)
+	http.HandleFunc("/auth/google/callback", handleGoogleCallback)
+	http.HandleFunc("/api/auth/status", handleAuthStatus)
+	http.HandleFunc("/auth/logout", handleLogout)
+
+	// User stats and settings endpoints
+	http.HandleFunc("/api/user/stats", handleUserStats)
+	http.HandleFunc("/api/user/settings", handleUserSettings)
 	
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -758,6 +827,10 @@ func handleJS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
 	
 	w.Write(content)
+}
+
+func handlePrivacy(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, getFilePath("privacy.html"))
 }
 
 // refinePrompt takes a prompt and uses the meta-prompt to refine it.
@@ -1044,6 +1117,315 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func handleUserStats(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("user_id")
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	userID := cookie.Value
+
+	switch r.Method {
+	case http.MethodGet:
+		stats, err := getUserStats(userID)
+		if err != nil {
+			http.Error(w, "Failed to get user stats", http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(stats)
+	case http.MethodPost:
+		var stats UserStats
+		if err := json.NewDecoder(r.Body).Decode(&stats); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		stats.UserID = userID
+		if err := updateUserStats(&stats); err != nil {
+			http.Error(w, "Failed to update user stats", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleUserSettings(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("user_id")
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	userID := cookie.Value
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var settings struct {
+		LastTopicID string `json:"last_topic_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := updateUserSetting(userID, settings.LastTopicID); err != nil {
+		http.Error(w, "Failed to update user settings", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func getUserByGoogleID(googleID string) (*User, error) {
+	table := airtableClient.GetTable(airtableBaseID, usersTableName)
+	records, err := table.GetRecords().WithFilterFormula(fmt.Sprintf("{GoogleID} = '%s'", googleID)).Do()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(records.Records) == 0 {
+		return nil, nil // Not found
+	}
+
+	record := records.Records[0]
+	return &User{
+		ID:         record.ID,
+		GoogleID:   record.Fields["GoogleID"].(string),
+		AirtableID: record.ID,
+	}, nil
+}
+
+func createUser(googleID string) (*User, error) {
+	table := airtableClient.GetTable(airtableBaseID, usersTableName)
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				Fields: map[string]any{
+					"GoogleID": googleID,
+				},
+			},
+		},
+	}
+	result, err := table.AddRecords(records)
+	if err != nil {
+		return nil, err
+	}
+
+	record := result.Records[0]
+	return &User{
+		ID:         record.ID,
+		GoogleID:   record.Fields["GoogleID"].(string),
+		AirtableID: record.ID,
+	}, nil
+}
+
+func getUserStats(userID string) (*UserStats, error) {
+	table := airtableClient.GetTable(airtableBaseID, userStatsTableName)
+	records, err := table.GetRecords().WithFilterFormula(fmt.Sprintf("{UserID} = '%s'", userID)).Do()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(records.Records) == 0 {
+		return &UserStats{UserID: userID}, nil // Return empty stats if not found
+	}
+
+	record := records.Records[0]
+	stats := &UserStats{
+		UserID:           userID,
+		AirtableRecordID: record.ID,
+	}
+
+	if val, ok := record.Fields["TotalExercises"].(float64); ok {
+		stats.TotalExercises = int(val)
+	}
+	if val, ok := record.Fields["TotalMistakes"].(float64); ok {
+		stats.TotalMistakes = int(val)
+	}
+	if val, ok := record.Fields["TotalHints"].(float64); ok {
+		stats.TotalHints = int(val)
+	}
+	if val, ok := record.Fields["TotalTime"].(float64); ok {
+		stats.TotalTime = int(val)
+	}
+	if val, ok := record.Fields["LastTopicID"].(string); ok {
+		stats.LastTopicID = val
+	}
+
+	return stats, nil
+}
+
+func updateUserStats(stats *UserStats) error {
+	table := airtableClient.GetTable(airtableBaseID, userStatsTableName)
+	fields := map[string]any{
+		"UserID":         stats.UserID,
+		"TotalExercises": stats.TotalExercises,
+		"TotalMistakes":  stats.TotalMistakes,
+		"TotalHints":     stats.TotalHints,
+		"TotalTime":      stats.TotalTime,
+	}
+
+	if stats.AirtableRecordID != "" {
+		// Update existing record
+		records := &airtable.Records{
+			Records: []*airtable.Record{
+				{
+					ID:     stats.AirtableRecordID,
+					Fields: fields,
+				},
+			},
+		}
+		_, err := table.UpdateRecords(records)
+		return err
+	}
+
+	// Create new record
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				Fields: fields,
+			},
+		},
+	}
+	_, err := table.AddRecords(records)
+	return err
+}
+
+func updateUserSetting(userID, lastTopicID string) error {
+	stats, err := getUserStats(userID)
+	if err != nil {
+		return err
+	}
+
+	stats.LastTopicID = lastTopicID
+
+	table := airtableClient.GetTable(airtableBaseID, userStatsTableName)
+	fields := map[string]any{
+		"UserID":      userID,
+		"LastTopicID": lastTopicID,
+	}
+
+	if stats.AirtableRecordID != "" {
+		// Update existing record
+		records := &airtable.Records{
+			Records: []*airtable.Record{
+				{
+					ID:     stats.AirtableRecordID,
+					Fields: fields,
+				},
+			},
+		}
+		_, err := table.UpdateRecords(records)
+		return err
+	}
+
+	// Create new record
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				Fields: fields,
+			},
+		},
+	}
+	_, err = table.AddRecords(records)
+	return err
+}
+
+func handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if googleOauthConfig == nil {
+		http.Error(w, "Google login is not configured", http.StatusInternalServerError)
+		return
+	}
+	url := googleOauthConfig.AuthCodeURL(oauthStateString)
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
+
+func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	if googleOauthConfig == nil {
+		http.Error(w, "Google login is not configured", http.StatusInternalServerError)
+		return
+	}
+
+	state := r.FormValue("state")
+	if state != oauthStateString {
+		log.Printf("Invalid oauth state, expected '%s', got '%s'\n", oauthStateString, state)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	code := r.FormValue("code")
+	token, err := googleOauthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		log.Printf("oauthConf.Exchange() failed with '%s'\n", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	oauth2Client := oauth2.NewClient(context.Background(), oauth2.StaticTokenSource(token))
+	oauth2Service, err := oauth2.New(oauth2Client)
+	if err != nil {
+		log.Printf("Unable to create oauth2 service: %v", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	userinfo, err := oauth2Service.Userinfo.Get().Do()
+	if err != nil {
+		log.Printf("Unable to get user info: %v", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Get or create user in Airtable
+	user, err := getUserByGoogleID(userinfo.Id)
+	if err != nil {
+		log.Printf("Unable to get user by google ID: %v", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+	if user == nil {
+		user, err = createUser(userinfo.Id)
+		if err != nil {
+			log.Printf("Unable to create user: %v", err)
+			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+			return
+		}
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "user_id",
+		Value:    user.ID,
+		HttpOnly: true,
+		Path:     "/",
+		Expires:  time.Now().Add(30 * 24 * time.Hour), // 30 days
+	})
+
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+}
+
+func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("user_id")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]any{"logged_in": false})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{"logged_in": true, "user_id": cookie.Value})
+}
+
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "user_id",
+		Value:    "",
+		HttpOnly: true,
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+	})
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 // Handle individual topic operations

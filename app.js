@@ -54,6 +54,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const lastRefinedPromptContent = document.getElementById('last-refined-prompt-content');
     const lastRefinedPromptCloseBtn = document.getElementById('last-refined-prompt-close-btn');
 
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+
     // --- Application State ---
     let state = {
         currentTopicId: '',
@@ -69,7 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isSessionComplete: false,
         editingTopicId: null,
         timer: 60,
-        timerInterval: null
+        timerInterval: null,
+        isLoggedIn: false,
+        userId: null
     };
 
     // --- Sample Data ---
@@ -308,6 +313,10 @@ document.addEventListener('DOMContentLoaded', () => {
         state.isSessionComplete = true;
         const endTime = Date.now();
         state.sessionTime = Math.floor((endTime - state.startTime) / 1000);
+
+        if (state.isLoggedIn) {
+            saveUserStats();
+        }
         
         const accuracy = state.exercises.length > 0 ? 
             Math.round(((state.exercises.length - state.mistakes) / state.exercises.length) * 100) : 0;
@@ -829,6 +838,9 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('selectedTopicId', topicId);
         topicSearch.value = topicName;
         topicDropdown.classList.add('hidden');
+        if (state.isLoggedIn) {
+            saveUserSettings();
+        }
     }
 
     // --- Event Listeners ---
@@ -859,8 +871,90 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTopicDropdown(filteredTopics);
     });
 
+    loginBtn.addEventListener('click', () => {
+        window.location.href = '/auth/google/login';
+    });
+
+    logoutBtn.addEventListener('click', () => {
+        window.location.href = '/auth/logout';
+    });
+
+    async function checkAuthStatus() {
+        try {
+            const response = await fetch('/api/auth/status');
+            const data = await response.json();
+            state.isLoggedIn = data.logged_in;
+            state.userId = data.user_id;
+            updateAuthUI();
+            if (state.isLoggedIn) {
+                loadUserStats();
+            }
+        } catch (error) {
+            console.error('Error checking auth status:', error);
+        }
+    }
+
+    async function loadUserStats() {
+        try {
+            const response = await fetch('/api/user/stats');
+            const stats = await response.json();
+            if (stats.last_topic_id) {
+                state.currentTopicId = stats.last_topic_id;
+                localStorage.setItem('selectedTopicId', stats.last_topic_id);
+                const currentTopic = state.topics.find(t => t.id === state.currentTopicId);
+                if (currentTopic) {
+                    topicSearch.value = currentTopic.name;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading user stats:', error);
+        }
+    }
+
+    function updateAuthUI() {
+        if (state.isLoggedIn) {
+            loginBtn.classList.add('hidden');
+            logoutBtn.classList.remove('hidden');
+        } else {
+            loginBtn.classList.remove('hidden');
+            logoutBtn.classList.add('hidden');
+        }
+    }
+
+    async function saveUserStats() {
+        try {
+            await fetch('/api/user/stats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    total_exercises: state.exercises.length,
+                    total_mistakes: state.mistakes,
+                    total_hints: state.hintsUsed,
+                    total_time: state.sessionTime,
+                })
+            });
+        } catch (error) {
+            console.error('Error saving user stats:', error);
+        }
+    }
+
+    async function saveUserSettings() {
+        try {
+            await fetch('/api/user/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    last_topic_id: state.currentTopicId,
+                })
+            });
+        } catch (error) {
+            console.error('Error saving user settings:', error);
+        }
+    }
+
     // --- Initialization ---
     function init() {
+        checkAuthStatus();
         loadTopics();
         
         // Start with sample exercises for testing

@@ -19,6 +19,12 @@ An interactive German language learning application that helps B1-level students
 - **Prompt Customization**: Tailor exercise generation prompts for each topic.
 - **Version History**: Track and restore the last 10 versions of a prompt.
 - **Airtable Integration**: Persistently stores topics and prompt versions.
+- **Optional Google Login**: Allows users to log in with their Google account to save their statistics and settings.
+
+## Optional Google Login
+This application provides an optional login feature using Google OAuth 2.0. When a user logs in, the application will store their statistics and settings, allowing them to track their progress across sessions. This feature is entirely optional and the application is fully functional without logging in.
+
+For more information on the data we store, please see our [Privacy Policy](privacy.html).
 
 ## Prompt Refinement
 
@@ -72,6 +78,9 @@ docker run -p 8080:8080 \
 | `OPENAI_URL` | No | `https://api.openai.com/v1` | API endpoint URL |
 | `MODEL_NAME` | No | `gpt-3.5-turbo-1106` | Model name to use |
 | `PORT` | No | `8080` | Port for the web server |
+| `GOOGLE_CLIENT_ID` | No | - | Your Google OAuth 2.0 Client ID |
+| `GOOGLE_CLIENT_SECRET` | No | - | Your Google OAuth 2.0 Client Secret |
+| `GOOGLE_REDIRECT_URL` | No | - | Your Google OAuth 2.0 Redirect URL |
 
 ## Airtable Setup
 
@@ -96,6 +105,17 @@ Create these two tables in your Airtable base:
 - `Prompt` - Long text (required)
 - `Version` - Number (required)
 - `CreatedAt` - Single line text (optional)
+
+**Table 3: "Users"**
+- `GoogleID` - Single line text (required)
+
+**Table 4: "UserStats"**
+- `UserID` - Single line text (required)
+- `TotalExercises` - Number (required)
+- `TotalMistakes` - Number (required)
+- `TotalHints` - Number (required)
+- `TotalTime` - Number (required)
+- `LastTopicID` - Single line text (optional)
 
 ### 3. Generate Personal Access Token
 
