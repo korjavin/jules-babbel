@@ -582,7 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1000);
 
         try {
-            const response = await fetch('/api/generate', {
+            const response = await fetch('/api/exercises', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -601,10 +601,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            const content = JSON.parse(data.choices[0].message.content);
 
-            if (content.exercises && content.exercises.length > 0) {
-                state.exercises = content.exercises;
+            if (data.exercises && data.exercises.length > 0) {
+                state.exercises = data.exercises;
                 state.currentExerciseIndex = 0;
                 state.mistakes = 0;
                 state.hintsUsed = 0;
@@ -614,7 +613,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateStats();
                 renderExercise();
             } else {
-                throw new Error('Invalid data structure received from API.');
+                // This can happen if generation fails or cache is empty and generation is disabled
+                alert('No exercises could be retrieved for this topic. Please try another topic or contact support.');
+                renderExercise(); // Render empty state
             }
 
         } catch (error) {
