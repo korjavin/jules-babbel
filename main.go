@@ -144,6 +144,7 @@ var (
 var (
 	googleOauthConfig *oauth2.Config
 	oauthStateString  string
+	googleAdminID     string
 )
 
 
@@ -897,6 +898,13 @@ func initOAuth() {
 		Endpoint:     google.Endpoint,
 	}
 	log.Println("Google OAuth initialized.")
+
+	googleAdminID = os.Getenv("GOOGLE_ADMIN_ID")
+	if googleAdminID == "" {
+		log.Println("Warning: GOOGLE_ADMIN_ID not set. Admin features will be disabled.")
+	} else {
+		log.Println("Google Admin ID configured.")
+	}
 }
 
 func main() {
@@ -948,6 +956,7 @@ func main() {
 	http.HandleFunc("/auth/google/callback", handleGoogleCallback)
 	http.HandleFunc("/api/auth/status", handleAuthStatus)
 	http.HandleFunc("/auth/logout", handleLogout)
+	http.HandleFunc("/api/auth/is_admin", handleIsAdmin)
 
 	// User stats and settings endpoints
 	http.HandleFunc("/api/user/stats", handleUserStats)
@@ -1481,26 +1490,28 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string][]*Topic{"topics": topicsList})
 
 	case http.MethodPost:
-		var req TopicRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
-		
-		if req.Name == "" || req.Prompt == "" {
-			http.Error(w, "Name and prompt are required", http.StatusBadRequest)
-			return
-		}
-		
-		topic, err := createTopic(req.Name, req.Prompt)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to create topic: %v", err), http.StatusInternalServerError)
-			return
-		}
-		
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(topic)
+		adminOnly(func(w http.ResponseWriter, r *http.Request) {
+			var req TopicRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			if req.Name == "" || req.Prompt == "" {
+				http.Error(w, "Name and prompt are required", http.StatusBadRequest)
+				return
+			}
+
+			topic, err := createTopic(req.Name, req.Prompt)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to create topic: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(topic)
+		}).ServeHTTP(w, r)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1816,6 +1827,71 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
+func handleIsAdmin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	isAdmin := false
+	if googleAdminID != "" {
+		userID := getUserIDFromRequest(r)
+		if userID != "" {
+			user, err := getUserByID(userID)
+			if err == nil && user != nil && user.GoogleID == googleAdminID {
+				isAdmin = true
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"is_admin": isAdmin})
+}
+
+func getUserByID(userID string) (*User, error) {
+	table := airtableClient.GetTable(airtableBaseID, usersTableName)
+	record, err := table.GetRecord(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if record == nil {
+		return nil, nil // Not found
+	}
+
+	return &User{
+		ID:         record.ID,
+		GoogleID:   record.Fields["GoogleID"].(string),
+		AirtableID: record.ID,
+	}, nil
+}
+
+func adminOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if googleAdminID == "" {
+			http.Error(w, "Admin features are not configured", http.StatusForbidden)
+			return
+		}
+
+		userID := getUserIDFromRequest(r)
+		if userID == "" {
+			http.Error(w, "You must be logged in to perform this action", http.StatusUnauthorized)
+			return
+		}
+
+		user, err := getUserByID(userID)
+		if err != nil || user == nil {
+			log.Printf("Error getting user for admin check (userID: %s): %v", userID, err)
+			http.Error(w, "Could not verify user credentials", http.StatusInternalServerError)
+			return
+		}
+
+		if user.GoogleID != googleAdminID {
+			log.Printf("Admin access denied for user (googleID: %s)", user.GoogleID)
+			http.Error(w, "You do not have permission to perform this action", http.StatusForbidden)
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	}
+}
+
 // Handle individual topic operations
 func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 	// Enable CORS
@@ -1847,34 +1923,38 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(topic)
 
 	case http.MethodPut:
-		var req UpdateTopicRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
+		adminOnly(func(w http.ResponseWriter, r *http.Request) {
+			var req UpdateTopicRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
 
-		if req.Prompt == "" {
-			http.Error(w, "Prompt is required", http.StatusBadRequest)
-			return
-		}
+			if req.Prompt == "" {
+				http.Error(w, "Prompt is required", http.StatusBadRequest)
+				return
+			}
 
-		topic, err := updateTopic(topicID, req.Name, req.Prompt)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to update topic: %v", err), http.StatusInternalServerError)
-			return
-		}
+			topic, err := updateTopic(topicID, req.Name, req.Prompt)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to update topic: %v", err), http.StatusInternalServerError)
+				return
+			}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(topic)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(topic)
+		}).ServeHTTP(w, r)
 
 	case http.MethodDelete:
-		err := deleteTopic(topicID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to delete topic: %v", err), http.StatusInternalServerError)
-			return
-		}
-		
-		w.WriteHeader(http.StatusNoContent)
+		adminOnly(func(w http.ResponseWriter, r *http.Request) {
+			err := deleteTopic(topicID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to delete topic: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.WriteHeader(http.StatusNoContent)
+		}).ServeHTTP(w, r)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1914,42 +1994,44 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string][]*PromptVersion{"versions": versions})
 
 	case http.MethodPost:
-		// Restore version: POST /api/versions/{topicID}/restore/{versionID}
-		if len(pathParts) < 3 || pathParts[1] != "restore" {
-			http.Error(w, "Invalid restore path", http.StatusBadRequest)
-			return
-		}
-		
-		versionID := pathParts[2]
-		
-		versionToRestore, err := getVersion(versionID)
-		if err != nil {
-			http.Error(w, "Version not found", http.StatusNotFound)
-			return
-		}
-		
-		// Verify the version belongs to the requested topic
-		if versionToRestore.TopicID != topicID {
-			http.Error(w, "Version does not belong to this topic", http.StatusBadRequest)
-			return
-		}
-		
-		// Get the current topic name to preserve it
-		currentTopic, err := getTopic(topicID)
-		if err != nil {
-			http.Error(w, "Failed to get current topic", http.StatusNotFound)
-			return
-		}
+		adminOnly(func(w http.ResponseWriter, r *http.Request) {
+			// Restore version: POST /api/versions/{topicID}/restore/{versionID}
+			if len(pathParts) < 3 || pathParts[1] != "restore" {
+				http.Error(w, "Invalid restore path", http.StatusBadRequest)
+				return
+			}
 
-		// Update topic with restored prompt (this will automatically create a new version)
-		topic, err := updateTopic(topicID, currentTopic.Name, versionToRestore.Prompt)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
-			return
-		}
-		
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(topic)
+			versionID := pathParts[2]
+
+			versionToRestore, err := getVersion(versionID)
+			if err != nil {
+				http.Error(w, "Version not found", http.StatusNotFound)
+				return
+			}
+
+			// Verify the version belongs to the requested topic
+			if versionToRestore.TopicID != topicID {
+				http.Error(w, "Version does not belong to this topic", http.StatusBadRequest)
+				return
+			}
+
+			// Get the current topic name to preserve it
+			currentTopic, err := getTopic(topicID)
+			if err != nil {
+				http.Error(w, "Failed to get current topic", http.StatusNotFound)
+				return
+			}
+
+			// Update topic with restored prompt (this will automatically create a new version)
+			topic, err := updateTopic(topicID, currentTopic.Name, versionToRestore.Prompt)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to restore version: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(topic)
+		}).ServeHTTP(w, r)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
