@@ -1119,15 +1119,7 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 
 	var finalExercises []*Exercise
 	if userID == "" {
-		// Guest user logic
-		if len(allExercises) < 10 {
-			newlyGenerated, err := generateAndCacheExercises(topic)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Failed to generate exercises: %v", err), http.StatusInternalServerError)
-				return
-			}
-			allExercises = append(allExercises, newlyGenerated...)
-		}
+		// Guest user logic - only serve from cache, never generate.
 		finalExercises = getRandomExercises(allExercises, 10)
 	} else {
 		// Authenticated user SRS logic
