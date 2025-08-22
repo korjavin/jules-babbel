@@ -74,7 +74,8 @@ document.addEventListener('DOMContentLoaded', () => {
         timer: 60,
         timerInterval: null,
         isLoggedIn: false,
-        userId: null
+        userId: null,
+        isAdmin: false
     };
 
     // --- Sample Data ---
@@ -886,12 +887,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             state.isLoggedIn = data.logged_in;
             state.userId = data.user_id;
-            updateAuthUI();
+
             if (state.isLoggedIn) {
+                const adminResponse = await fetch('/api/auth/is_admin');
+                const adminData = await adminResponse.json();
+                state.isAdmin = adminData.is_admin;
                 loadUserStats();
+            } else {
+                state.isAdmin = false;
             }
+            updateAuthUI();
         } catch (error) {
             console.error('Error checking auth status:', error);
+            state.isAdmin = false;
+            updateAuthUI();
         }
     }
 
@@ -919,6 +928,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             loginBtn.classList.remove('hidden');
             logoutBtn.classList.add('hidden');
+        }
+
+        if (state.isAdmin) {
+            settingsBtn.classList.remove('hidden');
+        } else {
+            settingsBtn.classList.add('hidden');
         }
     }
 
