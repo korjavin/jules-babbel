@@ -859,6 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Event Listeners ---
     topicSearch.addEventListener('focus', () => {
         renderTopicDropdown(state.topics);
+        positionDropdown();
         topicDropdown.classList.remove('hidden');
     });
 
@@ -875,6 +876,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 200);
     });
+    
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!topicSearch.contains(e.target) && !topicDropdown.contains(e.target)) {
+            topicDropdown.classList.add('hidden');
+        }
+    });
 
     topicSearch.addEventListener('input', () => {
         const searchTerm = topicSearch.value.toLowerCase();
@@ -882,6 +890,21 @@ document.addEventListener('DOMContentLoaded', () => {
             topic.name.toLowerCase().includes(searchTerm)
         );
         renderTopicDropdown(filteredTopics);
+        positionDropdown();
+    });
+    
+    function positionDropdown() {
+        const searchRect = topicSearch.getBoundingClientRect();
+        topicDropdown.style.left = searchRect.left + 'px';
+        topicDropdown.style.top = (searchRect.bottom + 4) + 'px';
+        topicDropdown.style.width = searchRect.width + 'px';
+    }
+    
+    // Reposition dropdown on window resize
+    window.addEventListener('resize', () => {
+        if (!topicDropdown.classList.contains('hidden')) {
+            positionDropdown();
+        }
     });
 
     loginBtn.addEventListener('click', () => {

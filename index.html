@@ -109,6 +109,8 @@
         #topic-dropdown {
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.3);
+            position: fixed !important;
+            z-index: 9999 !important;
         }
         #topic-dropdown .topic-item {
             cursor: pointer;
@@ -169,7 +171,7 @@
                 <div id="topic-selector-container" class="relative flex-1 min-w-0">
                     <label for="topic-search" class="sr-only">Select Topic</label>
                     <input type="text" id="topic-search" class="w-full p-2.5 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none text-sm" placeholder="Search and select a topic...">
-                    <div id="topic-dropdown" class="absolute z-50 w-full mt-1 bg-white/95 backdrop-blur-md border border-gray-200 rounded-lg shadow-2xl hidden max-h-64 overflow-y-auto">
+                    <div id="topic-dropdown" class="fixed z-[9999] w-full mt-1 bg-white/95 backdrop-blur-md border border-gray-200 rounded-lg shadow-2xl hidden max-h-64 overflow-y-auto" style="position: fixed !important; z-index: 9999 !important;">
                         <!-- Topic items will be dynamically inserted here -->
                     </div>
                 </div>
