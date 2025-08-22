@@ -21,7 +21,7 @@ import (
 	"github.com/mehanizm/airtable"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/oauth2/v2"
+	oauth2v2 "google.golang.org/api/oauth2/v2"
 	"golang.org/x/time/rate"
 )
 
@@ -1366,7 +1366,7 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oauth2Client := oauth2.NewClient(context.Background(), oauth2.StaticTokenSource(token))
-	oauth2Service, err := oauth2.New(oauth2Client)
+	oauth2Service, err := oauth2v2.New(oauth2Client)
 	if err != nil {
 		log.Printf("Unable to create oauth2 service: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
