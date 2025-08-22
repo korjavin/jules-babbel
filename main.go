@@ -942,6 +942,9 @@ func main() {
 	// Serve static files with cache headers
 	http.HandleFunc("/app.js", handleJS)
 	http.HandleFunc("/privacy.html", handlePrivacy)
+	http.HandleFunc("/favicon.svg", handleFavicon)
+	http.HandleFunc("/favicon-32x32.svg", handleFavicon32)
+	http.HandleFunc("/favicon.ico", handleFaviconICO) // Fallback for older browsers
 	
 	// API endpoints
 	http.HandleFunc("/api/generate", handleGenerate) // Will be deprecated for frontend use
@@ -1027,6 +1030,43 @@ func handleJS(w http.ResponseWriter, r *http.Request) {
 
 func handlePrivacy(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, getFilePath("privacy.html"))
+}
+
+func handleFavicon(w http.ResponseWriter, r *http.Request) {
+	// Read the SVG file
+	filePath := getFilePath("favicon.svg")
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		http.Error(w, "Favicon not found", http.StatusNotFound)
+		return
+	}
+	
+	// Set headers for SVG favicon - allow caching
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+	
+	w.Write(content)
+}
+
+func handleFavicon32(w http.ResponseWriter, r *http.Request) {
+	// Read the 32x32 SVG file
+	filePath := getFilePath("favicon-32x32.svg")
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		http.Error(w, "Favicon not found", http.StatusNotFound)
+		return
+	}
+	
+	// Set headers for SVG favicon - allow caching
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+	
+	w.Write(content)
+}
+
+func handleFaviconICO(w http.ResponseWriter, r *http.Request) {
+	// Redirect .ico requests to SVG favicon for better quality
+	http.Redirect(w, r, "/favicon.svg", http.StatusMovedPermanently)
 }
 
 // refinePrompt takes a prompt and uses the meta-prompt to refine it.
