@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"io"
 	"log"
 	"net"
@@ -43,6 +45,24 @@ type PromptVersion struct {
 	Prompt    string    `json:"prompt"`
 	Version   int       `json:"version"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type Exercise struct {
+	ID           string    `json:"id"`
+	AirtableID   string    `json:"airtable_id"`
+	TopicID      string    `json:"topic_id"`
+	PromptHash   string    `json:"prompt_hash"`
+	ExerciseJSON string    `json:"exercise_json"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type UserExerciseView struct {
+	ID                string    `json:"id"`
+	AirtableID        string    `json:"airtable_id"`
+	UserID            string    `json:"user_id"`
+	ExerciseID        string    `json:"exercise_id"`
+	LastViewed        time.Time `json:"last_viewed"`
+	RepetitionCounter int       `json:"repetition_counter"`
 }
 
 
@@ -107,10 +127,12 @@ var (
 	topicsMutex      sync.RWMutex
 	
 	// Table names
-	topicsTableName   = "Topics"
-	versionsTableName = "PromptVersions"
-	usersTableName    = "Users"
-	userStatsTableName = "UserStats"
+	topicsTableName            = "Topics"
+	versionsTableName          = "PromptVersions"
+	usersTableName             = "Users"
+	userStatsTableName         = "UserStats"
+	exercisesTableName         = "Exercises"
+	userExerciseViewsTableName = "UserExerciseViews"
 
 	// For observability
 	lastRefinedPrompt      string
@@ -204,7 +226,7 @@ func setupAirtableTables() error {
 func createAirtableTables() error {
 	// Note: Airtable's table creation via API requires Base Schema API access
 	// For now, we'll provide instructions for manual creation
-	
+
 	log.Printf("Please manually create these tables in your Airtable base:")
 	log.Printf("")
 	log.Printf("📋 Table 1: 'Topics'")
@@ -213,53 +235,73 @@ func createAirtableTables() error {
 	log.Printf("   • CreatedAt: Single line text (optional)")
 	log.Printf("   • UpdatedAt: Single line text (optional)")
 	log.Printf("")
-	log.Printf("📋 Table 2: 'PromptVersions'") 
+	log.Printf("📋 Table 2: 'PromptVersions'")
 	log.Printf("   • TopicID: Single line text")
 	log.Printf("   • Prompt: Long text")
 	log.Printf("   • Version: Number")
 	log.Printf("   • CreatedAt: Single line text (optional)")
 	log.Printf("")
+	log.Printf("📋 Table 3: 'Exercises'")
+	log.Printf("   • TopicID: Single line text (Link to 'Topics' table is recommended)")
+	log.Printf("   • PromptHash: Single line text")
+	log.Printf("   • ExerciseJSON: Long text")
+	log.Printf("   • CreatedAt: Created time (Airtable managed)")
+	log.Printf("")
+	log.Printf("📋 Table 4: 'UserExerciseViews'")
+	log.Printf("   • UserID: Single line text (Link to 'Users' table is recommended)")
+	log.Printf("   • ExerciseID: Single line text (Link to 'Exercises' table is recommended)")
+	log.Printf("   • LastViewed: Date and time")
+	log.Printf("   • RepetitionCounter: Number (Default to 0)")
+	log.Printf("   • NextReview: Formula (Optional, for debugging). Formula: DATEADD({LastViewed}, POWER({RepetitionCounter}, 2), 'days')")
+	log.Printf("")
 	log.Printf("💡 Tip: The timestamp fields (CreatedAt, UpdatedAt) are optional.")
 	log.Printf("💡 The app will work with just the required fields if timestamps are missing.")
 	log.Printf("")
-	
+
 	return fmt.Errorf("manual table creation required")
 }
 
-// Check Airtable permissions for both tables
+// Check Airtable permissions for all tables
 func checkAirtablePermissions() {
 	log.Printf("Checking Airtable permissions...")
-	
-	// Test Topics table access
-	topicsTable := airtableClient.GetTable(airtableBaseID, topicsTableName)
-	_, err := topicsTable.GetRecords().Do()
-	if err != nil {
-		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
-			log.Printf("❌ No access to 'Topics' table. Check token permissions.")
-		} else if strings.Contains(err.Error(), "status 404") {
-			log.Printf("❌ 'Topics' table not found. Please create it manually.")
-		} else {
-			log.Printf("⚠️  Topics table access error: %v", err)
-		}
-	} else {
-		log.Printf("✅ Topics table access: OK")
+
+	tables := []struct {
+		name        string
+		required    bool
+		description string
+	}{
+		{topicsTableName, true, "Core functionality will be severely limited."},
+		{versionsTableName, false, "Version history will be disabled."},
+		{usersTableName, false, "User authentication will be disabled."},
+		{userStatsTableName, false, "User statistics will not be saved."},
+		{exercisesTableName, true, "Core functionality of serving exercises will be disabled."},
+		{userExerciseViewsTableName, false, "SRS functionality will be disabled for authenticated users."},
 	}
-	
-	// Test PromptVersions table access
-	versionsTable := airtableClient.GetTable(airtableBaseID, versionsTableName)
-	_, err = versionsTable.GetRecords().Do()
+
+	for _, table := range tables {
+		checkTableAccess(table.name, table.required, table.description)
+	}
+}
+
+func checkTableAccess(tableName string, required bool, consequence string) {
+	table := airtableClient.GetTable(airtableBaseID, tableName)
+	_, err := table.GetRecords().WithMaxRecords(1).Do() // Check with 1 record to be efficient
+
 	if err != nil {
+		prefix := "⚠️"
+		if required {
+			prefix = "❌"
+		}
+
 		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
-			log.Printf("❌ No access to 'PromptVersions' table. Check token permissions.")
-			log.Printf("💡 Version history will be disabled but core functionality will work.")
+			log.Printf("%s No access to '%s' table. Check token permissions. %s", prefix, tableName, consequence)
 		} else if strings.Contains(err.Error(), "status 404") {
-			log.Printf("❌ 'PromptVersions' table not found. Please create it manually.")
-			log.Printf("💡 Version history will be disabled but core functionality will work.")
+			log.Printf("%s '%s' table not found. Please create it manually. %s", prefix, tableName, consequence)
 		} else {
-			log.Printf("⚠️  PromptVersions table access error: %v", err)
+			log.Printf("⚠️  %s table access error: %v", tableName, err)
 		}
 	} else {
-		log.Printf("✅ PromptVersions table access: OK")
+		log.Printf("✅ %s table access: OK", tableName)
 	}
 }
 
@@ -633,15 +675,15 @@ func addPromptVersion(topicID, prompt string) error {
 			return err
 		}
 	}
-	
+
 	nextVersion := 1
 	if len(versions) > 0 {
 		nextVersion = versions[len(versions)-1].Version + 1
 	}
-	
+
 	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
 	now := time.Now().Format(time.RFC3339)
-	
+
 	// Try with timestamp field first, fallback to minimal fields
 	records := &airtable.Records{
 		Records: []*airtable.Record{
@@ -655,7 +697,7 @@ func addPromptVersion(topicID, prompt string) error {
 			},
 		},
 	}
-	
+
 	_, err = table.AddRecords(records)
 	if err != nil {
 		// Check for permission errors
@@ -663,7 +705,7 @@ func addPromptVersion(topicID, prompt string) error {
 			log.Printf("No write access to PromptVersions table. Skipping version creation.")
 			return nil // Don't fail the topic creation
 		}
-		
+
 		// If it failed due to unknown fields, try with minimal fields
 		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
 			log.Printf("CreatedAt field not found in PromptVersions, creating with minimal fields")
@@ -674,17 +716,160 @@ func addPromptVersion(topicID, prompt string) error {
 			}
 			_, err = table.AddRecords(records)
 		}
-		
+
 		if err != nil {
 			// Final check for permissions before failing
-			if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
+			if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID__PERMISSIONS") {
 				log.Printf("Cannot create version due to permissions. Continuing without version tracking.")
 				return nil
 			}
 			return fmt.Errorf("failed to create version in Airtable: %v", err)
 		}
 	}
-	
+
+	return nil
+}
+
+func getPromptHash(prompt string) string {
+	hash := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(hash[:])
+}
+
+func createExercise(topicID, promptHash, exerciseJSON string) (*Exercise, error) {
+	table := airtableClient.GetTable(airtableBaseID, exercisesTableName)
+	records := &airtable.Records{
+		Records: []*airtable.Record{
+			{
+				Fields: map[string]any{
+					"TopicID":      topicID,
+					"PromptHash":   promptHash,
+					"ExerciseJSON": exerciseJSON,
+				},
+			},
+		},
+	}
+
+	result, err := table.AddRecords(records)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create exercise in Airtable: %v", err)
+	}
+
+	if len(result.Records) == 0 {
+		return nil, fmt.Errorf("no records returned from Airtable")
+	}
+
+	rec := result.Records[0]
+	exercise := &Exercise{
+		AirtableID:   rec.ID,
+		TopicID:      topicID,
+		PromptHash:   promptHash,
+		ExerciseJSON: exerciseJSON,
+		CreatedAt:    time.Now(), // Approximate, actual time is on Airtable
+	}
+	return exercise, nil
+}
+
+func getExercisesForTopic(topicID, promptHash string) ([]*Exercise, error) {
+	table := airtableClient.GetTable(airtableBaseID, exercisesTableName)
+	formula := fmt.Sprintf("AND({TopicID} = '%s', {PromptHash} = '%s')", topicID, promptHash)
+
+	records, err := table.GetRecords().WithFilterFormula(formula).Do()
+	if err != nil {
+		if strings.Contains(err.Error(), "NOT_FOUND") {
+			return []*Exercise{}, nil // Return empty slice if table not found
+		}
+		return nil, fmt.Errorf("failed to get exercises from Airtable: %v", err)
+	}
+
+	var exercises []*Exercise
+	for _, record := range records.Records {
+		exercise := &Exercise{
+			AirtableID: record.ID,
+		}
+		if val, ok := record.Fields["TopicID"].(string); ok {
+			exercise.TopicID = val
+		}
+		if val, ok := record.Fields["PromptHash"].(string); ok {
+			exercise.PromptHash = val
+		}
+		if val, ok := record.Fields["ExerciseJSON"].(string); ok {
+			exercise.ExerciseJSON = val
+		}
+		if val, ok := record.Fields["CreatedAt"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, val); err == nil {
+				exercise.CreatedAt = t
+			}
+		}
+		exercises = append(exercises, exercise)
+	}
+	return exercises, nil
+}
+
+func getUserExerciseViews(userID string) (map[string]*UserExerciseView, error) {
+	table := airtableClient.GetTable(airtableBaseID, userExerciseViewsTableName)
+	formula := fmt.Sprintf("{UserID} = '%s'", userID)
+
+	records, err := table.GetRecords().WithFilterFormula(formula).Do()
+	if err != nil {
+		if strings.Contains(err.Error(), "NOT_FOUND") {
+			return make(map[string]*UserExerciseView), nil // Return empty map if table not found
+		}
+		return nil, fmt.Errorf("failed to get user exercise views from Airtable: %v", err)
+	}
+
+	views := make(map[string]*UserExerciseView)
+	for _, record := range records.Records {
+		view := &UserExerciseView{
+			AirtableID: record.ID,
+		}
+		if val, ok := record.Fields["UserID"].(string); ok {
+			view.UserID = val
+		}
+		if val, ok := record.Fields["ExerciseID"].(string); ok {
+			view.ExerciseID = val
+		}
+		if val, ok := record.Fields["LastViewed"].(string); ok {
+			if t, err := time.Parse(time.RFC3339, val); err == nil {
+				view.LastViewed = t
+			}
+		}
+		if val, ok := record.Fields["RepetitionCounter"].(float64); ok {
+			view.RepetitionCounter = int(val)
+		}
+		views[view.ExerciseID] = view
+	}
+	return views, nil
+}
+
+func updateUserExerciseViews(viewsToUpdate []*UserExerciseView) error {
+	table := airtableClient.GetTable(airtableBaseID, userExerciseViewsTableName)
+	var recordsToCreate []*airtable.Record
+	var recordsToUpdate []*airtable.Record
+
+	for _, view := range viewsToUpdate {
+		fields := map[string]any{
+			"UserID":            view.UserID,
+			"ExerciseID":        view.ExerciseID,
+			"LastViewed":        view.LastViewed.Format(time.RFC3339),
+			"RepetitionCounter": view.RepetitionCounter,
+		}
+		if view.AirtableID == "" {
+			recordsToCreate = append(recordsToCreate, &airtable.Record{Fields: fields})
+		} else {
+			recordsToUpdate = append(recordsToUpdate, &airtable.Record{ID: view.AirtableID, Fields: fields})
+		}
+	}
+
+	if len(recordsToCreate) > 0 {
+		if _, err := table.AddRecords(&airtable.Records{Records: recordsToCreate}); err != nil {
+			return fmt.Errorf("failed to create user exercise views: %v", err)
+		}
+	}
+	if len(recordsToUpdate) > 0 {
+		if _, err := table.UpdateRecords(&airtable.Records{Records: recordsToUpdate}); err != nil {
+			return fmt.Errorf("failed to update user exercise views: %v", err)
+		}
+	}
 	return nil
 }
 
@@ -750,7 +935,8 @@ func main() {
 	http.HandleFunc("/privacy.html", handlePrivacy)
 	
 	// API endpoints
-	http.HandleFunc("/api/generate", handleGenerate)
+	http.HandleFunc("/api/generate", handleGenerate) // Will be deprecated for frontend use
+	http.HandleFunc("/api/exercises", handleExercises)
 	http.HandleFunc("/api/topics", handleTopics)
 	http.HandleFunc("/api/topics/", handleTopicByID)
 	http.HandleFunc("/api/versions/", handleVersions)
@@ -893,6 +1079,215 @@ func refinePrompt(originalPrompt, apiKey, openaiURL, modelName string) (string, 
 	refinedPrompt := openaiResp.Choices[0].Message.Content
 	log.Println("Successfully refined prompt.")
 	return refinedPrompt, nil
+}
+
+func handleExercises(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req GenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	topic, err := getTopic(req.TopicID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Topic not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	promptHash := getPromptHash(topic.Prompt)
+	userID := getUserIDFromRequest(r)
+
+	allExercises, err := getExercisesForTopic(req.TopicID, promptHash)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get exercises: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var finalExercises []*Exercise
+	if userID == "" {
+		// Guest user logic
+		if len(allExercises) < 10 {
+			newlyGenerated, err := generateAndCacheExercises(topic)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to generate exercises: %v", err), http.StatusInternalServerError)
+				return
+			}
+			allExercises = append(allExercises, newlyGenerated...)
+		}
+		finalExercises = getRandomExercises(allExercises, 10)
+	} else {
+		// Authenticated user SRS logic
+		userViews, err := getUserExerciseViews(userID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get user views: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		eligibleExercises := getEligibleExercisesForSRS(allExercises, userViews)
+		if len(eligibleExercises) < 10 {
+			newlyGenerated, err := generateAndCacheExercises(topic)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to generate exercises: %v", err), http.StatusInternalServerError)
+				return
+			}
+			allExercises = append(allExercises, newlyGenerated...)
+			eligibleExercises = getEligibleExercisesForSRS(allExercises, userViews)
+		}
+
+		finalExercises = getRandomExercises(eligibleExercises, 10)
+
+		// Update views for the selected exercises
+		var viewsToUpdate []*UserExerciseView
+		now := time.Now()
+		for _, ex := range finalExercises {
+			view, exists := userViews[ex.AirtableID]
+			if !exists {
+				view = &UserExerciseView{
+					UserID:     userID,
+					ExerciseID: ex.AirtableID,
+				}
+			}
+			view.LastViewed = now
+			view.RepetitionCounter++
+			viewsToUpdate = append(viewsToUpdate, view)
+		}
+		if err := updateUserExerciseViews(viewsToUpdate); err != nil {
+			log.Printf("Warning: failed to update user exercise views: %v", err)
+			// Don't block user, just log the error
+		}
+	}
+
+	// Prepare response
+	var responseExercises []json.RawMessage
+	for _, ex := range finalExercises {
+		responseExercises = append(responseExercises, []byte(ex.ExerciseJSON))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string][]json.RawMessage{"exercises": responseExercises})
+}
+
+func generateAndCacheExercises(topic *Topic) ([]*Exercise, error) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	openaiURL := os.Getenv("OPENAI_URL")
+	if openaiURL == "" {
+		openaiURL = "https://api.openai.com/v1"
+	}
+	modelName := os.Getenv("MODEL_NAME")
+	if modelName == "" {
+		modelName = "gpt-3.5-turbo-1106"
+	}
+
+	finalPrompt, err := refinePrompt(topic.Prompt, apiKey, openaiURL, modelName)
+	if err != nil {
+		log.Printf("Error refining prompt, falling back to original: %v", err)
+		finalPrompt = topic.Prompt
+	} else {
+		lastRefinedPromptMutex.Lock()
+		lastRefinedPrompt = finalPrompt
+		lastRefinedPromptMutex.Unlock()
+	}
+
+	openaiReq := OpenAIRequest{
+		Model:          modelName,
+		Messages:       []Message{{Role: "user", Content: finalPrompt}},
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
+	}
+
+	reqBody, _ := json.Marshal(openaiReq)
+	client := &http.Client{}
+	apiReq, _ := http.NewRequest("POST", openaiURL+"/chat/completions", bytes.NewBuffer(reqBody))
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call OpenAI API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var openaiResp OpenAIResponse
+	json.Unmarshal(respBody, &openaiResp)
+
+	if openaiResp.Error != nil {
+		return nil, fmt.Errorf("API error: %s", openaiResp.Error.Message)
+	}
+
+	if len(openaiResp.Choices) == 0 || openaiResp.Choices[0].Message.Content == "" {
+		return nil, fmt.Errorf("received an empty response from OpenAI")
+	}
+
+	// The actual content is a JSON string inside the response.
+	var exerciseData struct {
+		Exercises []json.RawMessage `json:"exercises"`
+	}
+	if err := json.Unmarshal([]byte(openaiResp.Choices[0].Message.Content), &exerciseData); err != nil {
+		return nil, fmt.Errorf("failed to parse exercises from OpenAI response: %w", err)
+	}
+
+	promptHash := getPromptHash(topic.Prompt)
+	var newlyGenerated []*Exercise
+	for _, exJSON := range exerciseData.Exercises {
+		exercise, err := createExercise(topic.ID, promptHash, string(exJSON))
+		if err != nil {
+			log.Printf("Warning: failed to cache exercise: %v", err)
+			continue
+		}
+		newlyGenerated = append(newlyGenerated, exercise)
+	}
+
+	return newlyGenerated, nil
+}
+
+func getEligibleExercisesForSRS(allExercises []*Exercise, userViews map[string]*UserExerciseView) []*Exercise {
+	var eligible []*Exercise
+	now := time.Now()
+	for _, ex := range allExercises {
+		view, seen := userViews[ex.AirtableID]
+		if !seen {
+			eligible = append(eligible, ex)
+			continue
+		}
+		// SRS logic: next review date is (counter^2) days after last view
+		daysSinceView := now.Sub(view.LastViewed).Hours() / 24
+		nextReviewInDays := float64(view.RepetitionCounter * view.RepetitionCounter)
+		if daysSinceView >= nextReviewInDays {
+			eligible = append(eligible, ex)
+		}
+	}
+	return eligible
+}
+
+func getRandomExercises(exercises []*Exercise, count int) []*Exercise {
+	if len(exercises) <= count {
+		return exercises
+	}
+	rand.Shuffle(len(exercises), func(i, j int) {
+		exercises[i], exercises[j] = exercises[j], exercises[i]
+	})
+	return exercises[:count]
+}
+
+func getUserIDFromRequest(r *http.Request) string {
+	cookie, err := r.Cookie("user_id")
+	if err != nil {
+		return "" // No cookie, so not logged in
+	}
+	return cookie.Value
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
