@@ -141,19 +141,19 @@
         </nav>
     </header>
 
-    <div id="topic-selection-section" class="bg-white/10 backdrop-blur-lg border-b border-white/20 py-12">
+    <div id="topic-selection-section" class="bg-white/10 backdrop-blur-lg border-b border-white/20 py-6">
         <div class="container mx-auto px-6 text-center">
-            <h2 class="text-3xl font-bold text-white mb-4 drop-shadow-lg">Choose Your Focus</h2>
-            <p class="text-white/90 mb-8 text-lg">Select a topic below to start practicing. You can change topics at any time in the settings.</p>
-            <div id="topic-selector-container" class="relative max-w-md mx-auto">
-                <label for="topic-search" class="sr-only">Select Topic</label>
-                <input type="text" id="topic-search" class="w-full p-3 border rounded-full shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none" placeholder="Search and select a topic...">
-                <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
-                    <!-- Topic items will be dynamically inserted here -->
+            <h2 class="text-xl font-semibold text-white mb-2 drop-shadow-lg">Choose Your Focus</h2>
+            <p class="text-white/80 mb-4 text-sm">Select a topic to start practicing</p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-2xl mx-auto">
+                <div id="topic-selector-container" class="relative flex-1 min-w-0">
+                    <label for="topic-search" class="sr-only">Select Topic</label>
+                    <input type="text" id="topic-search" class="w-full p-2.5 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-400 focus:outline-none text-sm" placeholder="Search and select a topic...">
+                    <div id="topic-dropdown" class="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg hidden max-h-60 overflow-y-auto">
+                        <!-- Topic items will be dynamically inserted here -->
+                    </div>
                 </div>
-            </div>
-            <div class="mt-8">
-                <button id="generate-btn" class="btn-primary px-8 py-4 rounded-xl font-bold text-xl">Get Exercises</button>
+                <button id="generate-btn" class="btn-primary px-6 py-2.5 rounded-lg font-semibold whitespace-nowrap">Get Exercises</button>
             </div>
         </div>
     </div>
