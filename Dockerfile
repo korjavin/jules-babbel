@@ -3,6 +3,9 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
+# Install CGO dependencies
+RUN apk add --no-cache gcc musl-dev
+
 # Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
@@ -11,7 +14,7 @@ RUN go mod download
 COPY main.go ./
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+RUN CGO_ENABLED=1 GOOS=linux go build -o main .
 
 # Final stage
 FROM alpine:latest
@@ -30,8 +33,14 @@ COPY --from=builder /app/main .
 # Create static directory and copy frontend files
 COPY index.html app.js privacy.html favicon.svg favicon-32x32.svg ./static/
 
+# Copy migrations
+COPY migrations ./migrations
+
 # Make the binary executable and change ownership
 RUN chmod +x ./main && chown -R appuser:appuser /app
+
+# Create and set permissions for the data directory
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
 
 USER appuser
 

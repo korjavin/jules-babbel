@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    google_id TEXT NOT NULL UNIQUE
+);
