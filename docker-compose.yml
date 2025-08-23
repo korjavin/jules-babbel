@@ -1,11 +1,15 @@
-version: "3.8"
+volumes:
+  srs-data:
 
 services:
   srs:
+    build: .
     image: ghcr.io/korjavin/german-conjuctions-trainer:master
     container_name: gct
-    networks:
-      - vaultwarden_default
+    ports:
+      - "8080:8080"
+    volumes:
+      - srs-data:/app/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gct.rule=Host(`${DNS_NAME}`)"
@@ -18,13 +22,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_URL=${OPENAI_URL}
       - MODEL_NAME=${MODEL}
-      - AIRTABLE_TOKEN=${AIRTABLE_TOKEN}
-      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}
+      - DATABASE_PATH=/app/data/srs.db
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URL=${GOOGLE_REDIRECT_URL}
       - GOOGLE_ADMIN_ID=${GOOGLE_ADMIN_ID}
-
-networks:
-  vaultwarden_default:
-    external: true
