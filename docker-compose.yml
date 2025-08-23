@@ -6,6 +6,8 @@ services:
     build: .
     image: ghcr.io/korjavin/german-conjuctions-trainer:master
     container_name: gct
+    ports:
+      - "8080:8080"
     volumes:
       - srs-data:/app/data
     labels:
