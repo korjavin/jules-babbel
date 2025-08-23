@@ -3,7 +3,6 @@ volumes:
 
 services:
   srs:
-    build: .
     image: ghcr.io/korjavin/german-conjuctions-trainer:master
     container_name: gct
     volumes:
