@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,13 +17,16 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mehanizm/airtable"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	oauth2v2 "google.golang.org/api/oauth2/v2"
@@ -33,11 +38,11 @@ type GenerateRequest struct {
 }
 
 type Topic struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Prompt      string    `json:"prompt"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Prompt    string    `json:"prompt"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type PromptVersion struct {
@@ -50,7 +55,6 @@ type PromptVersion struct {
 
 type Exercise struct {
 	ID           string    `json:"id"`
-	AirtableID   string    `json:"airtable_id"`
 	TopicID      string    `json:"topic_id"`
 	PromptHash   string    `json:"prompt_hash"`
 	ExerciseJSON string    `json:"exercise_json"`
@@ -59,13 +63,11 @@ type Exercise struct {
 
 type UserExerciseView struct {
 	ID                string    `json:"id"`
-	AirtableID        string    `json:"airtable_id"`
 	UserID            string    `json:"user_id"`
 	ExerciseID        string    `json:"exercise_id"`
 	LastViewed        time.Time `json:"last_viewed"`
 	RepetitionCounter int       `json:"repetition_counter"`
 }
-
 
 type TopicRequest struct {
 	Name   string `json:"name"`
@@ -73,19 +75,18 @@ type TopicRequest struct {
 }
 
 type User struct {
-	ID         string `json:"id"`
-	GoogleID   string `json:"google_id"`
-	AirtableID string `json:"airtable_id"`
+	ID       string `json:"id"`
+	GoogleID string `json:"google_id"`
 }
 
 type UserStats struct {
-	UserID             string `json:"user_id"`
-	TotalExercises     int    `json:"total_exercises"`
-	TotalMistakes      int    `json:"total_mistakes"`
-	TotalHints         int    `json:"total_hints"`
-	TotalTime          int    `json:"total_time"`
-	LastTopicID        string `json:"last_topic_id"`
-	AirtableRecordID   string `json:"airtable_record_id"`
+	ID             string `json:"id"`
+	UserID         string `json:"user_id"`
+	TotalExercises int    `json:"total_exercises"`
+	TotalMistakes  int    `json:"total_mistakes"`
+	TotalHints     int    `json:"total_hints"`
+	TotalTime      int    `json:"total_time"`
+	LastTopicID    string `json:"last_topic_id"`
 }
 
 type UpdateTopicRequest struct {
@@ -121,19 +122,10 @@ type OpenAIResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// Airtable configuration
+// Database configuration
 var (
-	airtableClient   *airtable.Client
-	airtableBaseID   string
-	topicsMutex      sync.RWMutex
-	
-	// Table names
-	topicsTableName            = "Topics"
-	versionsTableName          = "PromptVersions"
-	usersTableName             = "Users"
-	userStatsTableName         = "UserStats"
-	exercisesTableName         = "Exercises"
-	userExerciseViewsTableName = "UserExerciseViews"
+	db      *sql.DB
+	dbMutex sync.RWMutex
 
 	// For observability
 	lastRefinedPrompt      string
@@ -146,7 +138,6 @@ var (
 	oauthStateString  string
 	googleAdminID     string
 )
-
 
 // Rate limiting
 var (
@@ -183,133 +174,53 @@ Here is the prompt to refine:
 ---
 `
 
-
-
-// Initialize Airtable client
+// Initialize SQLite database
 func initStorage() {
-	airtableToken := os.Getenv("AIRTABLE_TOKEN")
-	airtableBaseID = os.Getenv("AIRTABLE_BASE_ID")
-	
-	if airtableToken == "" {
-		log.Fatal("AIRTABLE_TOKEN environment variable is required")
+	databasePath := os.Getenv("DATABASE_PATH")
+	if databasePath == "" {
+		log.Fatal("DATABASE_PATH environment variable is required")
 	}
-	if airtableBaseID == "" {
-		log.Fatal("AIRTABLE_BASE_ID environment variable is required")
-	}
-	
-	airtableClient = airtable.NewClient(airtableToken)
-	log.Printf("Airtable integration initialized with base ID: %s", airtableBaseID)
-	
-	// Verify and setup tables
-	err := setupAirtableTables()
+
+	log.Printf("Initializing SQLite database at %s", databasePath)
+	var err error
+	db, err = sql.Open("sqlite3", databasePath)
 	if err != nil {
-		log.Printf("Warning: Could not setup Airtable tables: %v", err)
+		log.Fatalf("Failed to open database: %v", err)
 	}
-	
-	// Check permissions
-	checkAirtablePermissions()
-}
 
-// Setup Airtable tables if they don't exist or verify their structure
-func setupAirtableTables() error {
-	log.Printf("Setting up Airtable tables...")
-	
-	// Try to create the tables using Airtable's API
-	err := createAirtableTables()
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	// Enable foreign keys
+	_, err = db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
-		log.Printf("Could not auto-create tables: %v", err)
-		return err
-	}
-	
-	return nil
-}
-
-// Create Airtable tables using the Metadata API
-func createAirtableTables() error {
-	// Note: Airtable's table creation via API requires Base Schema API access
-	// For now, we'll provide instructions for manual creation
-
-	log.Printf("Please manually create these tables in your Airtable base:")
-	log.Printf("")
-	log.Printf("📋 Table 1: 'Topics'")
-	log.Printf("   • Name: Single line text")
-	log.Printf("   • Prompt: Long text")
-	log.Printf("   • CreatedAt: Single line text (optional)")
-	log.Printf("   • UpdatedAt: Single line text (optional)")
-	log.Printf("")
-	log.Printf("📋 Table 2: 'PromptVersions'")
-	log.Printf("   • TopicID: Single line text")
-	log.Printf("   • Prompt: Long text")
-	log.Printf("   • Version: Number")
-	log.Printf("   • CreatedAt: Single line text (optional)")
-	log.Printf("")
-	log.Printf("📋 Table 3: 'Exercises'")
-	log.Printf("   • TopicID: Single line text (Link to 'Topics' table is recommended)")
-	log.Printf("   • PromptHash: Single line text")
-	log.Printf("   • ExerciseJSON: Long text")
-	log.Printf("   • CreatedAt: Created time (Airtable managed)")
-	log.Printf("")
-	log.Printf("📋 Table 4: 'UserExerciseViews'")
-	log.Printf("   • UserID: Single line text (Link to 'Users' table is recommended)")
-	log.Printf("   • ExerciseID: Single line text (Link to 'Exercises' table is recommended)")
-	log.Printf("   • LastViewed: Date and time")
-	log.Printf("   • RepetitionCounter: Number (Default to 0)")
-	log.Printf("   • NextReview: Formula (Optional, for debugging). Formula: DATEADD({LastViewed}, POWER({RepetitionCounter}, 2), 'days')")
-	log.Printf("")
-	log.Printf("💡 Tip: The timestamp fields (CreatedAt, UpdatedAt) are optional.")
-	log.Printf("💡 The app will work with just the required fields if timestamps are missing.")
-	log.Printf("")
-
-	return fmt.Errorf("manual table creation required")
-}
-
-// Check Airtable permissions for all tables
-func checkAirtablePermissions() {
-	log.Printf("Checking Airtable permissions...")
-
-	tables := []struct {
-		name        string
-		required    bool
-		description string
-	}{
-		{topicsTableName, true, "Core functionality will be severely limited."},
-		{versionsTableName, false, "Version history will be disabled."},
-		{usersTableName, false, "User authentication will be disabled."},
-		{userStatsTableName, false, "User statistics will not be saved."},
-		{exercisesTableName, true, "Core functionality of serving exercises will be disabled."},
-		{userExerciseViewsTableName, false, "SRS functionality will be disabled for authenticated users."},
+		log.Fatalf("Failed to enable foreign keys: %v", err)
 	}
 
-	for _, table := range tables {
-		checkTableAccess(table.name, table.required, table.description)
-	}
+	runMigrations(databasePath)
+	log.Println("Database initialized successfully")
 }
 
-func checkTableAccess(tableName string, required bool, consequence string) {
-	table := airtableClient.GetTable(airtableBaseID, tableName)
-	_, err := table.GetRecords().Do() // Check without max records for compatibility
-
+func runMigrations(databasePath string) {
+	log.Println("Running database migrations...")
+	m, err := migrate.New(
+		"file://migrations",
+		fmt.Sprintf("sqlite3://%s", databasePath),
+	)
 	if err != nil {
-		prefix := "⚠️"
-		if required {
-			prefix = "❌"
-		}
-
-		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
-			log.Printf("%s No access to '%s' table. Check token permissions. %s", prefix, tableName, consequence)
-		} else if strings.Contains(err.Error(), "status 404") {
-			log.Printf("%s '%s' table not found. Please create it manually. %s", prefix, tableName, consequence)
-		} else {
-			log.Printf("⚠️  %s table access error: %v", tableName, err)
-		}
-	} else {
-		log.Printf("✅ %s table access: OK", tableName)
+		log.Fatalf("Failed to create migrate instance: %v", err)
 	}
+
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	log.Println("Migrations applied successfully")
 }
 
 // Initialize with default topics
 func initializeDefaultTopics() {
-	// Check if we already have topics (to avoid duplicating on restart)
 	existingTopics, err := getAllTopics()
 	if err != nil {
 		log.Printf("Warning: Could not check existing topics: %v", err)
@@ -372,310 +283,205 @@ Return ONLY the JSON object, with no other text or explanations.`,
 	}
 }
 
-// Data access functions using Airtable
+// Data access functions using SQLite
 func createTopic(name, prompt string) (*Topic, error) {
-	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
-	now := time.Now().Format(time.RFC3339)
-	
-	// Try with timestamp fields first, fallback to just required fields
-	fields := map[string]any{
-		"Name":   name,
-		"Prompt": prompt,
-	}
-	
-	// Try to add timestamp fields if they exist
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				Fields: map[string]any{
-					"Name":      name,
-					"Prompt":    prompt,
-					"CreatedAt": now,
-					"UpdatedAt": now,
-				},
-			},
-		},
-	}
-	
-	result, err := table.AddRecords(records)
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	tx, err := db.Begin()
 	if err != nil {
-		// If it failed due to unknown fields, try with minimal fields
-		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
-			log.Printf("Timestamp fields not found, creating with minimal fields")
-			records.Records[0].Fields = fields
-			result, err = table.AddRecords(records)
-		}
-		
-		if err != nil {
-			return nil, fmt.Errorf("failed to create topic in Airtable: %v", err)
-		}
+		return nil, err
 	}
-	
-	if len(result.Records) == 0 {
-		return nil, fmt.Errorf("no records returned from Airtable")
-	}
-	
+	defer tx.Rollback()
+
+	now := time.Now()
 	topic := &Topic{
-		ID:        result.Records[0].ID,
+		ID:        uuid.New().String(),
 		Name:      name,
 		Prompt:    prompt,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
-	
+
+	stmt, err := tx.Prepare("INSERT INTO topics(id, name, prompt, created_at, updated_at) VALUES(?, ?, ?, ?, ?)")
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(topic.ID, topic.Name, topic.Prompt, topic.CreatedAt, topic.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create initial version
-	err = addPromptVersion(topic.ID, prompt)
+	err = addPromptVersion(tx, topic.ID, prompt)
 	if err != nil {
 		log.Printf("Warning: Failed to create initial version: %v", err)
 	}
-	
-	return topic, nil
+
+	return topic, tx.Commit()
 }
 
 func getAllTopics() ([]*Topic, error) {
-	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
-	
-	records, err := table.GetRecords().Do()
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+
+	rows, err := db.Query("SELECT id, name, prompt, created_at, updated_at FROM topics ORDER BY created_at ASC")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get topics from Airtable: %v", err)
+		return nil, err
 	}
-	
+	defer rows.Close()
+
 	var topics []*Topic
-	for _, record := range records.Records {
-		topic := &Topic{
-			ID: record.ID,
+	for rows.Next() {
+		var topic Topic
+		if err := rows.Scan(&topic.ID, &topic.Name, &topic.Prompt, &topic.CreatedAt, &topic.UpdatedAt); err != nil {
+			return nil, err
 		}
-		
-		if name, ok := record.Fields["Name"].(string); ok {
-			topic.Name = name
-		}
-		if prompt, ok := record.Fields["Prompt"].(string); ok {
-			topic.Prompt = prompt
-		}
-		if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
-				topic.CreatedAt = t
-			}
-		}
-		if updatedAt, ok := record.Fields["UpdatedAt"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
-				topic.UpdatedAt = t
-			}
-		}
-		
-		topics = append(topics, topic)
+		topics = append(topics, &topic)
 	}
-	
-	// Sort by creation time
-	sort.Slice(topics, func(i, j int) bool {
-		return topics[i].CreatedAt.Before(topics[j].CreatedAt)
-	})
-	
 	return topics, nil
 }
 
 func getTopic(topicID string) (*Topic, error) {
-	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
-	
-	record, err := table.GetRecord(topicID)
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+
+	var topic Topic
+	err := db.QueryRow("SELECT id, name, prompt, created_at, updated_at FROM topics WHERE id = ?", topicID).Scan(&topic.ID, &topic.Name, &topic.Prompt, &topic.CreatedAt, &topic.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get topic from Airtable: %v", err)
-	}
-	
-	topic := &Topic{
-		ID: record.ID,
-	}
-	
-	if name, ok := record.Fields["Name"].(string); ok {
-		topic.Name = name
-	}
-	if prompt, ok := record.Fields["Prompt"].(string); ok {
-		topic.Prompt = prompt
-	}
-	if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
-		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
-			topic.CreatedAt = t
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("topic not found")
 		}
+		return nil, err
 	}
-	if updatedAt, ok := record.Fields["UpdatedAt"].(string); ok {
-		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
-			topic.UpdatedAt = t
-		}
-	}
-	
-	return topic, nil
+	return &topic, nil
 }
 
 func updateTopic(topicID, name, prompt string) (*Topic, error) {
-	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
-	now := time.Now().Format(time.RFC3339)
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
 
 	// First add the new version
-	err := addPromptVersion(topicID, prompt)
+	err = addPromptVersion(tx, topicID, prompt)
 	if err != nil {
 		log.Printf("Warning: Failed to create version: %v", err)
 	}
 
 	// Clean up old versions (keep only last 10)
-	versions, err := getVersions(topicID)
+	versions, err := getVersionsTx(tx, topicID)
 	if err == nil && len(versions) > 10 {
-		versionsTable := airtableClient.GetTable(airtableBaseID, versionsTableName)
-		oldVersions := versions[:len(versions)-10] // Keep last 10
+		oldVersions := versions[:len(versions)-10]
 		var oldVersionIDs []string
 		for _, oldVersion := range oldVersions {
 			oldVersionIDs = append(oldVersionIDs, oldVersion.ID)
 		}
-		versionsTable.DeleteRecords(oldVersionIDs)
+		stmt, err := tx.Prepare("DELETE FROM prompt_versions WHERE id IN (?" + strings.Repeat(",?", len(oldVersionIDs)-1) + ")")
+		if err == nil {
+			args := make([]interface{}, len(oldVersionIDs))
+			for i, id := range oldVersionIDs {
+				args[i] = id
+			}
+			_, err = stmt.Exec(args...)
+			if err != nil {
+				log.Printf("Warning: Failed to delete old versions: %v", err)
+			}
+			stmt.Close()
+		}
 	}
 
-	// Prepare fields for update
-	fields := map[string]any{
-		"Prompt":    prompt,
-		"UpdatedAt": now,
-	}
-	if name != "" {
-		fields["Name"] = name
-	}
-
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				ID:     topicID,
-				Fields: fields,
-			},
-		},
-	}
-
-	_, err = table.UpdateRecords(records)
+	// Update topic
+	now := time.Now()
+	stmt, err := tx.Prepare("UPDATE topics SET name = ?, prompt = ?, updated_at = ? WHERE id = ?")
 	if err != nil {
-		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
-			log.Printf("UpdatedAt field not found, updating with minimal fields")
-			delete(fields, "UpdatedAt")
-			records.Records[0].Fields = fields
-			_, err = table.UpdateRecords(records)
-		}
+		return nil, err
+	}
+	defer stmt.Close()
 
-		if err != nil {
-			return nil, fmt.Errorf("failed to update topic in Airtable: %v", err)
-		}
+	if _, err := stmt.Exec(name, prompt, now, topicID); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	return getTopic(topicID)
 }
 
 func deleteTopic(topicID string) error {
-	// First delete all versions for this topic
-	versions, err := getVersions(topicID)
-	if err == nil && len(versions) > 0 {
-		versionsTable := airtableClient.GetTable(airtableBaseID, versionsTableName)
-		var versionIDs []string
-		for _, version := range versions {
-			versionIDs = append(versionIDs, version.ID)
-		}
-		versionsTable.DeleteRecords(versionIDs)
-	}
-	
-	// Then delete the topic
-	table := airtableClient.GetTable(airtableBaseID, topicsTableName)
-	_, err = table.DeleteRecords([]string{topicID})
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	stmt, err := db.Prepare("DELETE FROM topics WHERE id = ?")
 	if err != nil {
-		return fmt.Errorf("failed to delete topic from Airtable: %v", err)
+		return err
 	}
-	
-	return nil
+	defer stmt.Close()
+
+	_, err = stmt.Exec(topicID)
+	return err
 }
 
 func getVersions(topicID string) ([]*PromptVersion, error) {
-	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
-	
-	records, err := table.GetRecords().
-		WithFilterFormula(fmt.Sprintf("{TopicID} = '%s'", topicID)).
-		Do()
-	
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+	return getVersionsTx(nil, topicID)
+}
+
+func getVersionsTx(tx *sql.Tx, topicID string) ([]*PromptVersion, error) {
+	var rows *sql.Rows
+	var err error
+	query := "SELECT id, topic_id, prompt, version, created_at FROM prompt_versions WHERE topic_id = ? ORDER BY version ASC"
+
+	if tx != nil {
+		rows, err = tx.Query(query, topicID)
+	} else {
+		rows, err = db.Query(query, topicID)
+	}
+
 	if err != nil {
-		// Check for permission errors
-		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
-			log.Printf("No read access to PromptVersions table. Version history unavailable.")
-			return []*PromptVersion{}, nil // Return empty slice instead of error
-		}
-		return nil, fmt.Errorf("failed to get versions from Airtable: %v", err)
+		return nil, err
 	}
-	
+	defer rows.Close()
+
 	var versions []*PromptVersion
-	for _, record := range records.Records {
-		version := &PromptVersion{
-			ID: record.ID,
+	for rows.Next() {
+		var v PromptVersion
+		if err := rows.Scan(&v.ID, &v.TopicID, &v.Prompt, &v.Version, &v.CreatedAt); err != nil {
+			return nil, err
 		}
-		
-		if topicIDField, ok := record.Fields["TopicID"].(string); ok {
-			version.TopicID = topicIDField
-		}
-		if prompt, ok := record.Fields["Prompt"].(string); ok {
-			version.Prompt = prompt
-		}
-		if versionNum, ok := record.Fields["Version"].(float64); ok {
-			version.Version = int(versionNum)
-		}
-		if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
-				version.CreatedAt = t
-			}
-		}
-		
-		versions = append(versions, version)
+		versions = append(versions, &v)
 	}
-	
-	// Sort by version number
-	sort.Slice(versions, func(i, j int) bool {
-		return versions[i].Version < versions[j].Version
-	})
-	
 	return versions, nil
 }
 
 func getVersion(versionID string) (*PromptVersion, error) {
-	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
-	
-	record, err := table.GetRecord(versionID)
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+
+	var v PromptVersion
+	err := db.QueryRow("SELECT id, topic_id, prompt, version, created_at FROM prompt_versions WHERE id = ?", versionID).Scan(&v.ID, &v.TopicID, &v.Prompt, &v.Version, &v.CreatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get version from Airtable: %v", err)
-	}
-	
-	version := &PromptVersion{
-		ID: record.ID,
-	}
-	
-	if topicID, ok := record.Fields["TopicID"].(string); ok {
-		version.TopicID = topicID
-	}
-	if prompt, ok := record.Fields["Prompt"].(string); ok {
-		version.Prompt = prompt
-	}
-	if versionNum, ok := record.Fields["Version"].(float64); ok {
-		version.Version = int(versionNum)
-	}
-	if createdAt, ok := record.Fields["CreatedAt"].(string); ok {
-		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
-			version.CreatedAt = t
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("version not found")
 		}
+		return nil, err
 	}
-	
-	return version, nil
+	return &v, nil
 }
 
-func addPromptVersion(topicID, prompt string) error {
-	// Get existing versions to determine next version number
-	versions, err := getVersions(topicID)
+func addPromptVersion(tx *sql.Tx, topicID, prompt string) error {
+	versions, err := getVersionsTx(tx, topicID)
 	if err != nil {
-		// Check if it's a permission error
-		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
-			log.Printf("No access to PromptVersions table. Please check Airtable token permissions.")
-			log.Printf("The token needs read/write access to both 'Topics' and 'PromptVersions' tables.")
-			return nil // Don't fail the topic creation due to version permission issues
-		}
-		if !strings.Contains(err.Error(), "status 404") {
-			return err
-		}
+		return err
 	}
 
 	nextVersion := 1
@@ -683,53 +489,22 @@ func addPromptVersion(topicID, prompt string) error {
 		nextVersion = versions[len(versions)-1].Version + 1
 	}
 
-	table := airtableClient.GetTable(airtableBaseID, versionsTableName)
-	now := time.Now().Format(time.RFC3339)
-
-	// Try with timestamp field first, fallback to minimal fields
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				Fields: map[string]any{
-					"TopicID":   topicID,
-					"Prompt":    prompt,
-					"Version":   nextVersion,
-					"CreatedAt": now,
-				},
-			},
-		},
+	version := &PromptVersion{
+		ID:        uuid.New().String(),
+		TopicID:   topicID,
+		Prompt:    prompt,
+		Version:   nextVersion,
+		CreatedAt: time.Now(),
 	}
 
-	_, err = table.AddRecords(records)
+	stmt, err := tx.Prepare("INSERT INTO prompt_versions(id, topic_id, prompt, version, created_at) VALUES(?, ?, ?, ?, ?)")
 	if err != nil {
-		// Check for permission errors
-		if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID_PERMISSIONS") {
-			log.Printf("No write access to PromptVersions table. Skipping version creation.")
-			return nil // Don't fail the topic creation
-		}
-
-		// If it failed due to unknown fields, try with minimal fields
-		if strings.Contains(err.Error(), "UNKNOWN_FIELD_NAME") {
-			log.Printf("CreatedAt field not found in PromptVersions, creating with minimal fields")
-			records.Records[0].Fields = map[string]any{
-				"TopicID": topicID,
-				"Prompt":  prompt,
-				"Version": nextVersion,
-			}
-			_, err = table.AddRecords(records)
-		}
-
-		if err != nil {
-			// Final check for permissions before failing
-			if strings.Contains(err.Error(), "status 403") || strings.Contains(err.Error(), "INVALID__PERMISSIONS") {
-				log.Printf("Cannot create version due to permissions. Continuing without version tracking.")
-				return nil
-			}
-			return fmt.Errorf("failed to create version in Airtable: %v", err)
-		}
+		return err
 	}
+	defer stmt.Close()
 
-	return nil
+	_, err = stmt.Exec(version.ID, version.TopicID, version.Prompt, version.Version, version.CreatedAt)
+	return err
 }
 
 func getPromptHash(prompt string) string {
@@ -738,141 +513,106 @@ func getPromptHash(prompt string) string {
 }
 
 func createExercise(topicID, promptHash, exerciseJSON string) (*Exercise, error) {
-	table := airtableClient.GetTable(airtableBaseID, exercisesTableName)
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				Fields: map[string]any{
-					"TopicID":      topicID,
-					"PromptHash":   promptHash,
-					"ExerciseJSON": exerciseJSON,
-				},
-			},
-		},
-	}
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
 
-	result, err := table.AddRecords(records)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create exercise in Airtable: %v", err)
-	}
-
-	if len(result.Records) == 0 {
-		return nil, fmt.Errorf("no records returned from Airtable")
-	}
-
-	rec := result.Records[0]
 	exercise := &Exercise{
-		AirtableID:   rec.ID,
+		ID:           uuid.New().String(),
 		TopicID:      topicID,
 		PromptHash:   promptHash,
 		ExerciseJSON: exerciseJSON,
-		CreatedAt:    time.Now(), // Approximate, actual time is on Airtable
+		CreatedAt:    time.Now(),
 	}
+
+	stmt, err := db.Prepare("INSERT INTO exercises(id, topic_id, prompt_hash, exercise_json, created_at) VALUES(?, ?, ?, ?, ?)")
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(exercise.ID, exercise.TopicID, exercise.PromptHash, exercise.ExerciseJSON, exercise.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+
 	return exercise, nil
 }
 
 func getExercisesForTopic(topicID, promptHash string) ([]*Exercise, error) {
-	table := airtableClient.GetTable(airtableBaseID, exercisesTableName)
-	formula := fmt.Sprintf("AND({TopicID} = '%s', {PromptHash} = '%s')", topicID, promptHash)
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
 
-	records, err := table.GetRecords().WithFilterFormula(formula).Do()
+	rows, err := db.Query("SELECT id, topic_id, prompt_hash, exercise_json, created_at FROM exercises WHERE topic_id = ? AND prompt_hash = ?", topicID, promptHash)
 	if err != nil {
-		if strings.Contains(err.Error(), "NOT_FOUND") {
-			return []*Exercise{}, nil // Return empty slice if table not found
-		}
-		return nil, fmt.Errorf("failed to get exercises from Airtable: %v", err)
+		return nil, err
 	}
+	defer rows.Close()
 
 	var exercises []*Exercise
-	for _, record := range records.Records {
-		exercise := &Exercise{
-			AirtableID: record.ID,
+	for rows.Next() {
+		var ex Exercise
+		if err := rows.Scan(&ex.ID, &ex.TopicID, &ex.PromptHash, &ex.ExerciseJSON, &ex.CreatedAt); err != nil {
+			return nil, err
 		}
-		if val, ok := record.Fields["TopicID"].(string); ok {
-			exercise.TopicID = val
-		}
-		if val, ok := record.Fields["PromptHash"].(string); ok {
-			exercise.PromptHash = val
-		}
-		if val, ok := record.Fields["ExerciseJSON"].(string); ok {
-			exercise.ExerciseJSON = val
-		}
-		if val, ok := record.Fields["CreatedAt"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, val); err == nil {
-				exercise.CreatedAt = t
-			}
-		}
-		exercises = append(exercises, exercise)
+		exercises = append(exercises, &ex)
 	}
 	return exercises, nil
 }
 
 func getUserExerciseViews(userID string) (map[string]*UserExerciseView, error) {
-	table := airtableClient.GetTable(airtableBaseID, userExerciseViewsTableName)
-	formula := fmt.Sprintf("{UserID} = '%s'", userID)
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
 
-	records, err := table.GetRecords().WithFilterFormula(formula).Do()
+	rows, err := db.Query("SELECT id, user_id, exercise_id, last_viewed, repetition_counter FROM user_exercise_views WHERE user_id = ?", userID)
 	if err != nil {
-		if strings.Contains(err.Error(), "NOT_FOUND") {
-			return make(map[string]*UserExerciseView), nil // Return empty map if table not found
-		}
-		return nil, fmt.Errorf("failed to get user exercise views from Airtable: %v", err)
+		return nil, err
 	}
+	defer rows.Close()
 
 	views := make(map[string]*UserExerciseView)
-	for _, record := range records.Records {
-		view := &UserExerciseView{
-			AirtableID: record.ID,
+	for rows.Next() {
+		var view UserExerciseView
+		if err := rows.Scan(&view.ID, &view.UserID, &view.ExerciseID, &view.LastViewed, &view.RepetitionCounter); err != nil {
+			return nil, err
 		}
-		if val, ok := record.Fields["UserID"].(string); ok {
-			view.UserID = val
-		}
-		if val, ok := record.Fields["ExerciseID"].(string); ok {
-			view.ExerciseID = val
-		}
-		if val, ok := record.Fields["LastViewed"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, val); err == nil {
-				view.LastViewed = t
-			}
-		}
-		if val, ok := record.Fields["RepetitionCounter"].(float64); ok {
-			view.RepetitionCounter = int(val)
-		}
-		views[view.ExerciseID] = view
+		views[view.ExerciseID] = &view
 	}
 	return views, nil
 }
 
 func updateUserExerciseViews(viewsToUpdate []*UserExerciseView) error {
-	table := airtableClient.GetTable(airtableBaseID, userExerciseViewsTableName)
-	var recordsToCreate []*airtable.Record
-	var recordsToUpdate []*airtable.Record
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO user_exercise_views (id, user_id, exercise_id, last_viewed, repetition_counter)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			last_viewed = excluded.last_viewed,
+			repetition_counter = excluded.repetition_counter
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
 
 	for _, view := range viewsToUpdate {
-		fields := map[string]any{
-			"UserID":            view.UserID,
-			"ExerciseID":        view.ExerciseID,
-			"LastViewed":        view.LastViewed.Format(time.RFC3339),
-			"RepetitionCounter": view.RepetitionCounter,
+		if view.ID == "" {
+			view.ID = uuid.New().String() // Assign new ID for new views
 		}
-		if view.AirtableID == "" {
-			recordsToCreate = append(recordsToCreate, &airtable.Record{Fields: fields})
-		} else {
-			recordsToUpdate = append(recordsToUpdate, &airtable.Record{ID: view.AirtableID, Fields: fields})
+		_, err := stmt.Exec(view.ID, view.UserID, view.ExerciseID, view.LastViewed, view.RepetitionCounter)
+		if err != nil {
+			return fmt.Errorf("failed to upsert user exercise view: %w", err)
 		}
 	}
 
-	if len(recordsToCreate) > 0 {
-		if _, err := table.AddRecords(&airtable.Records{Records: recordsToCreate}); err != nil {
-			return fmt.Errorf("failed to create user exercise views: %v", err)
-		}
-	}
-	if len(recordsToUpdate) > 0 {
-		if _, err := table.UpdateRecords(&airtable.Records{Records: recordsToUpdate}); err != nil {
-			return fmt.Errorf("failed to update user exercise views: %v", err)
-		}
-	}
-	return nil
+	return tx.Commit()
 }
 
 func initOAuth() {
@@ -913,7 +653,7 @@ func main() {
 
 	// Initialize Google OAuth
 	initOAuth()
-	
+
 	// Initialize default topics
 	initializeDefaultTopics()
 
@@ -945,7 +685,7 @@ func main() {
 	http.HandleFunc("/favicon.svg", handleFavicon)
 	http.HandleFunc("/favicon-32x32.svg", handleFavicon32)
 	http.HandleFunc("/favicon.ico", handleFaviconICO) // Fallback for older browsers
-	
+
 	// API endpoints
 	http.HandleFunc("/api/generate", handleGenerate) // Will be deprecated for frontend use
 	http.HandleFunc("/api/exercises", handleExercises)
@@ -964,7 +704,7 @@ func main() {
 	// User stats and settings endpoints
 	http.HandleFunc("/api/user/stats", handleUserStats)
 	http.HandleFunc("/api/user/settings", handleUserSettings)
-	
+
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -989,7 +729,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	
+
 	// Read the HTML file
 	filePath := getFilePath("index.html")
 	content, err := os.ReadFile(filePath)
@@ -997,18 +737,18 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// Replace the cache-busting parameter with current timestamp
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	htmlContent := string(content)
 	htmlContent = strings.ReplaceAll(htmlContent, "app.js?v=20250821001", fmt.Sprintf("app.js?v=%s", timestamp))
-	
+
 	// Set headers to prevent caching of the HTML file itself
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	w.Write([]byte(htmlContent))
 }
 
@@ -1020,11 +760,11 @@ func handleJS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// Set headers for JS file - allow caching but with versioning
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
-	
+
 	w.Write(content)
 }
 
@@ -1040,11 +780,11 @@ func handleFavicon(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Favicon not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// Set headers for SVG favicon - allow caching
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
-	
+
 	w.Write(content)
 }
 
@@ -1056,11 +796,11 @@ func handleFavicon32(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Favicon not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// Set headers for SVG favicon - allow caching
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
-	
+
 	w.Write(content)
 }
 
@@ -1195,11 +935,11 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 		var viewsToUpdate []*UserExerciseView
 		now := time.Now()
 		for _, ex := range finalExercises {
-			view, exists := userViews[ex.AirtableID]
+			view, exists := userViews[ex.ID]
 			if !exists {
 				view = &UserExerciseView{
 					UserID:     userID,
-					ExerciseID: ex.AirtableID,
+					ExerciseID: ex.ID,
 				}
 			}
 			view.LastViewed = now
@@ -1299,7 +1039,7 @@ func getEligibleExercisesForSRS(allExercises []*Exercise, userViews map[string]*
 	var eligible []*Exercise
 	now := time.Now()
 	for _, ex := range allExercises {
-		view, seen := userViews[ex.AirtableID]
+		view, seen := userViews[ex.ID]
 		if !seen {
 			eligible = append(eligible, ex)
 			continue
@@ -1381,7 +1121,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if openaiURL == "" {
 		openaiURL = "https://api.openai.com/v1"
 	}
-	
+
 	modelName := os.Getenv("MODEL_NAME")
 	if modelName == "" {
 		modelName = "gpt-3.5-turbo-1106"
@@ -1512,7 +1252,7 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	
+
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -1525,7 +1265,7 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Failed to get topics: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string][]*Topic{"topics": topicsList})
 
@@ -1620,157 +1360,99 @@ func handleUserSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUserByGoogleID(googleID string) (*User, error) {
-	table := airtableClient.GetTable(airtableBaseID, usersTableName)
-	records, err := table.GetRecords().WithFilterFormula(fmt.Sprintf("{GoogleID} = '%s'", googleID)).Do()
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+
+	var user User
+	err := db.QueryRow("SELECT id, google_id FROM users WHERE google_id = ?", googleID).Scan(&user.ID, &user.GoogleID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // Not found
+		}
 		return nil, err
 	}
-
-	if len(records.Records) == 0 {
-		return nil, nil // Not found
-	}
-
-	record := records.Records[0]
-	return &User{
-		ID:         record.ID,
-		GoogleID:   record.Fields["GoogleID"].(string),
-		AirtableID: record.ID,
-	}, nil
+	return &user, nil
 }
 
 func createUser(googleID string) (*User, error) {
-	table := airtableClient.GetTable(airtableBaseID, usersTableName)
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				Fields: map[string]any{
-					"GoogleID": googleID,
-				},
-			},
-		},
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	user := &User{
+		ID:       uuid.New().String(),
+		GoogleID: googleID,
 	}
-	result, err := table.AddRecords(records)
+
+	stmt, err := db.Prepare("INSERT INTO users(id, google_id) VALUES(?, ?)")
 	if err != nil {
 		return nil, err
 	}
+	defer stmt.Close()
 
-	record := result.Records[0]
-	return &User{
-		ID:         record.ID,
-		GoogleID:   record.Fields["GoogleID"].(string),
-		AirtableID: record.ID,
-	}, nil
+	_, err = stmt.Exec(user.ID, user.GoogleID)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func getUserStats(userID string) (*UserStats, error) {
-	table := airtableClient.GetTable(airtableBaseID, userStatsTableName)
-	records, err := table.GetRecords().WithFilterFormula(fmt.Sprintf("{UserID} = '%s'", userID)).Do()
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+
+	var stats UserStats
+	err := db.QueryRow("SELECT id, user_id, total_exercises, total_mistakes, total_hints, total_time, last_topic_id FROM user_stats WHERE user_id = ?", userID).Scan(&stats.ID, &stats.UserID, &stats.TotalExercises, &stats.TotalMistakes, &stats.TotalHints, &stats.TotalTime, &stats.LastTopicID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &UserStats{UserID: userID}, nil // Return empty stats if not found
+		}
 		return nil, err
 	}
-
-	if len(records.Records) == 0 {
-		return &UserStats{UserID: userID}, nil // Return empty stats if not found
-	}
-
-	record := records.Records[0]
-	stats := &UserStats{
-		UserID:           userID,
-		AirtableRecordID: record.ID,
-	}
-
-	if val, ok := record.Fields["TotalExercises"].(float64); ok {
-		stats.TotalExercises = int(val)
-	}
-	if val, ok := record.Fields["TotalMistakes"].(float64); ok {
-		stats.TotalMistakes = int(val)
-	}
-	if val, ok := record.Fields["TotalHints"].(float64); ok {
-		stats.TotalHints = int(val)
-	}
-	if val, ok := record.Fields["TotalTime"].(float64); ok {
-		stats.TotalTime = int(val)
-	}
-	if val, ok := record.Fields["LastTopicID"].(string); ok {
-		stats.LastTopicID = val
-	}
-
-	return stats, nil
+	return &stats, nil
 }
 
 func updateUserStats(stats *UserStats) error {
-	table := airtableClient.GetTable(airtableBaseID, userStatsTableName)
-	fields := map[string]any{
-		"UserID":         stats.UserID,
-		"TotalExercises": stats.TotalExercises,
-		"TotalMistakes":  stats.TotalMistakes,
-		"TotalHints":     stats.TotalHints,
-		"TotalTime":      stats.TotalTime,
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	if stats.ID == "" {
+		stats.ID = uuid.New().String()
 	}
 
-	if stats.AirtableRecordID != "" {
-		// Update existing record
-		records := &airtable.Records{
-			Records: []*airtable.Record{
-				{
-					ID:     stats.AirtableRecordID,
-					Fields: fields,
-				},
-			},
-		}
-		_, err := table.UpdateRecords(records)
+	stmt, err := db.Prepare(`
+		INSERT INTO user_stats (id, user_id, total_exercises, total_mistakes, total_hints, total_time, last_topic_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			total_exercises = excluded.total_exercises,
+			total_mistakes = excluded.total_mistakes,
+			total_hints = excluded.total_hints,
+			total_time = excluded.total_time
+	`)
+	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
-	// Create new record
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				Fields: fields,
-			},
-		},
-	}
-	_, err := table.AddRecords(records)
+	_, err = stmt.Exec(stats.ID, stats.UserID, stats.TotalExercises, stats.TotalMistakes, stats.TotalHints, stats.TotalTime, stats.LastTopicID)
 	return err
 }
 
 func updateUserSetting(userID, lastTopicID string) error {
-	stats, err := getUserStats(userID)
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	stmt, err := db.Prepare(`
+        INSERT INTO user_stats (id, user_id, last_topic_id, total_exercises, total_mistakes, total_hints, total_time)
+        VALUES (?, ?, ?, 0, 0, 0, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+            last_topic_id = excluded.last_topic_id
+    `)
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
-	stats.LastTopicID = lastTopicID
-
-	table := airtableClient.GetTable(airtableBaseID, userStatsTableName)
-	fields := map[string]any{
-		"UserID":      userID,
-		"LastTopicID": lastTopicID,
-	}
-
-	if stats.AirtableRecordID != "" {
-		// Update existing record
-		records := &airtable.Records{
-			Records: []*airtable.Record{
-				{
-					ID:     stats.AirtableRecordID,
-					Fields: fields,
-				},
-			},
-		}
-		_, err := table.UpdateRecords(records)
-		return err
-	}
-
-	// Create new record
-	records := &airtable.Records{
-		Records: []*airtable.Record{
-			{
-				Fields: fields,
-			},
-		},
-	}
-	_, err = table.AddRecords(records)
+	_, err = stmt.Exec(uuid.New().String(), userID, lastTopicID)
 	return err
 }
 
@@ -1819,7 +1501,6 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get or create user in Airtable
 	user, err := getUserByGoogleID(userinfo.Id)
 	if err != nil {
 		log.Printf("Unable to get user by google ID: %v", err)
@@ -1885,21 +1566,18 @@ func handleIsAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUserByID(userID string) (*User, error) {
-	table := airtableClient.GetTable(airtableBaseID, usersTableName)
-	record, err := table.GetRecord(userID)
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
+
+	var user User
+	err := db.QueryRow("SELECT id, google_id FROM users WHERE id = ?", userID).Scan(&user.ID, &user.GoogleID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // Not found
+		}
 		return nil, err
 	}
-
-	if record == nil {
-		return nil, nil // Not found
-	}
-
-	return &User{
-		ID:         record.ID,
-		GoogleID:   record.Fields["GoogleID"].(string),
-		AirtableID: record.ID,
-	}, nil
+	return &user, nil
 }
 
 func adminOnly(h http.HandlerFunc) http.HandlerFunc {
@@ -1938,7 +1616,7 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	
+
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -1958,7 +1636,7 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Topic not found", http.StatusNotFound)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(topic)
 
@@ -1973,6 +1651,15 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 			if req.Prompt == "" {
 				http.Error(w, "Prompt is required", http.StatusBadRequest)
 				return
+			}
+			if req.Name == "" {
+				// Get current name if not provided
+				currentTopic, err := getTopic(topicID)
+				if err != nil {
+					http.Error(w, "Topic not found", http.StatusNotFound)
+					return
+				}
+				req.Name = currentTopic.Name
 			}
 
 			topic, err := updateTopic(topicID, req.Name, req.Prompt)
@@ -2007,7 +1694,7 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	
+
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -2019,7 +1706,7 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Topic ID required", http.StatusBadRequest)
 		return
 	}
-	
+
 	topicID := pathParts[0]
 
 	switch r.Method {
@@ -2029,7 +1716,7 @@ func handleVersions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Failed to get versions: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string][]*PromptVersion{"versions": versions})
 
