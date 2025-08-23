@@ -191,6 +191,8 @@ func initStorage() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	db.SetMaxOpenConns(1)
+
 	// Enable foreign keys
 	_, err = db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
