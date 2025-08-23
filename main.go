@@ -124,8 +124,7 @@ type OpenAIResponse struct {
 
 // Database configuration
 var (
-	db      *sql.DB
-	dbMutex sync.RWMutex
+	db *sql.DB
 
 	// For observability
 	lastRefinedPrompt      string
@@ -183,7 +182,7 @@ func initStorage() {
 
 	log.Printf("Initializing SQLite database at %s", databasePath)
 	var err error
-	db, err = sql.Open("sqlite3", databasePath)
+	db, err = sql.Open("sqlite3", databasePath+"?_journal_mode=WAL") // Use WAL mode for better concurrency
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -221,6 +220,7 @@ func runMigrations(databasePath string) {
 
 // Initialize with default topics
 func initializeDefaultTopics() {
+	log.Println("Checking for default topics...")
 	existingTopics, err := getAllTopics()
 	if err != nil {
 		log.Printf("Warning: Could not check existing topics: %v", err)
@@ -285,9 +285,7 @@ Return ONLY the JSON object, with no other text or explanations.`,
 
 // Data access functions using SQLite
 func createTopic(name, prompt string) (*Topic, error) {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Println("DB: createTopic")
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, err
@@ -315,18 +313,16 @@ func createTopic(name, prompt string) (*Topic, error) {
 	}
 
 	// Create initial version
-	err = addPromptVersion(tx, topic.ID, prompt)
-	if err != nil {
-		log.Printf("Warning: Failed to create initial version: %v", err)
+	if err := addPromptVersion(tx, topic.ID, prompt); err != nil {
+		// Log but don't fail the transaction
+		log.Printf("Warning: Failed to create initial version for new topic %s: %v", topic.ID, err)
 	}
 
 	return topic, tx.Commit()
 }
 
 func getAllTopics() ([]*Topic, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Println("DB: getAllTopics")
 	rows, err := db.Query("SELECT id, name, prompt, created_at, updated_at FROM topics ORDER BY created_at ASC")
 	if err != nil {
 		return nil, err
@@ -345,11 +341,20 @@ func getAllTopics() ([]*Topic, error) {
 }
 
 func getTopic(topicID string) (*Topic, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
+	log.Printf("DB: getTopic (id: %s)", topicID)
+	return getTopicTx(nil, topicID)
+}
 
+func getTopicTx(tx *sql.Tx, topicID string) (*Topic, error) {
 	var topic Topic
-	err := db.QueryRow("SELECT id, name, prompt, created_at, updated_at FROM topics WHERE id = ?", topicID).Scan(&topic.ID, &topic.Name, &topic.Prompt, &topic.CreatedAt, &topic.UpdatedAt)
+	query := "SELECT id, name, prompt, created_at, updated_at FROM topics WHERE id = ?"
+	var err error
+	if tx != nil {
+		err = tx.QueryRow(query, topicID).Scan(&topic.ID, &topic.Name, &topic.Prompt, &topic.CreatedAt, &topic.UpdatedAt)
+	} else {
+		err = db.QueryRow(query, topicID).Scan(&topic.ID, &topic.Name, &topic.Prompt, &topic.CreatedAt, &topic.UpdatedAt)
+	}
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("topic not found")
@@ -360,9 +365,7 @@ func getTopic(topicID string) (*Topic, error) {
 }
 
 func updateTopic(topicID, name, prompt string) (*Topic, error) {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: updateTopic (id: %s)", topicID)
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, err
@@ -370,9 +373,8 @@ func updateTopic(topicID, name, prompt string) (*Topic, error) {
 	defer tx.Rollback()
 
 	// First add the new version
-	err = addPromptVersion(tx, topicID, prompt)
-	if err != nil {
-		log.Printf("Warning: Failed to create version: %v", err)
+	if err := addPromptVersion(tx, topicID, prompt); err != nil {
+		log.Printf("Warning: Failed to create version during topic update: %v", err)
 	}
 
 	// Clean up old versions (keep only last 10)
@@ -383,7 +385,9 @@ func updateTopic(topicID, name, prompt string) (*Topic, error) {
 		for _, oldVersion := range oldVersions {
 			oldVersionIDs = append(oldVersionIDs, oldVersion.ID)
 		}
-		stmt, err := tx.Prepare("DELETE FROM prompt_versions WHERE id IN (?" + strings.Repeat(",?", len(oldVersionIDs)-1) + ")")
+		// In-place construction of the query with placeholders
+		query := "DELETE FROM prompt_versions WHERE id IN (?" + strings.Repeat(",?", len(oldVersionIDs)-1) + ")"
+		stmt, err := tx.Prepare(query)
 		if err == nil {
 			args := make([]interface{}, len(oldVersionIDs))
 			for i, id := range oldVersionIDs {
@@ -409,17 +413,17 @@ func updateTopic(topicID, name, prompt string) (*Topic, error) {
 		return nil, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	// Get the updated topic data within the same transaction
+	updatedTopic, err := getTopicTx(tx, topicID)
+	if err != nil {
 		return nil, err
 	}
 
-	return getTopic(topicID)
+	return updatedTopic, tx.Commit()
 }
 
 func deleteTopic(topicID string) error {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: deleteTopic (id: %s)", topicID)
 	stmt, err := db.Prepare("DELETE FROM topics WHERE id = ?")
 	if err != nil {
 		return err
@@ -431,8 +435,7 @@ func deleteTopic(topicID string) error {
 }
 
 func getVersions(topicID string) ([]*PromptVersion, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
+	log.Printf("DB: getVersions (topicID: %s)", topicID)
 	return getVersionsTx(nil, topicID)
 }
 
@@ -464,9 +467,7 @@ func getVersionsTx(tx *sql.Tx, topicID string) ([]*PromptVersion, error) {
 }
 
 func getVersion(versionID string) (*PromptVersion, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Printf("DB: getVersion (id: %s)", versionID)
 	var v PromptVersion
 	err := db.QueryRow("SELECT id, topic_id, prompt, version, created_at FROM prompt_versions WHERE id = ?", versionID).Scan(&v.ID, &v.TopicID, &v.Prompt, &v.Version, &v.CreatedAt)
 	if err != nil {
@@ -479,6 +480,7 @@ func getVersion(versionID string) (*PromptVersion, error) {
 }
 
 func addPromptVersion(tx *sql.Tx, topicID, prompt string) error {
+	log.Printf("DB: addPromptVersion (topicID: %s)", topicID)
 	versions, err := getVersionsTx(tx, topicID)
 	if err != nil {
 		return err
@@ -513,9 +515,7 @@ func getPromptHash(prompt string) string {
 }
 
 func createExercise(topicID, promptHash, exerciseJSON string) (*Exercise, error) {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: createExercise (topicID: %s)", topicID)
 	exercise := &Exercise{
 		ID:           uuid.New().String(),
 		TopicID:      topicID,
@@ -539,9 +539,7 @@ func createExercise(topicID, promptHash, exerciseJSON string) (*Exercise, error)
 }
 
 func getExercisesForTopic(topicID, promptHash string) ([]*Exercise, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Printf("DB: getExercisesForTopic (topicID: %s, promptHash: %s)", topicID, promptHash)
 	rows, err := db.Query("SELECT id, topic_id, prompt_hash, exercise_json, created_at FROM exercises WHERE topic_id = ? AND prompt_hash = ?", topicID, promptHash)
 	if err != nil {
 		return nil, err
@@ -560,9 +558,7 @@ func getExercisesForTopic(topicID, promptHash string) ([]*Exercise, error) {
 }
 
 func getUserExerciseViews(userID string) (map[string]*UserExerciseView, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Printf("DB: getUserExerciseViews (userID: %s)", userID)
 	rows, err := db.Query("SELECT id, user_id, exercise_id, last_viewed, repetition_counter FROM user_exercise_views WHERE user_id = ?", userID)
 	if err != nil {
 		return nil, err
@@ -581,9 +577,7 @@ func getUserExerciseViews(userID string) (map[string]*UserExerciseView, error) {
 }
 
 func updateUserExerciseViews(viewsToUpdate []*UserExerciseView) error {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: updateUserExerciseViews (count: %d)", len(viewsToUpdate))
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -872,6 +866,7 @@ func refinePrompt(originalPrompt, apiKey, openaiURL, modelName string) (string, 
 }
 
 func handleExercises(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleExercises (%s)", r.Method)
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -890,6 +885,7 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	log.Printf("API: handleExercises - TopicID: %s", req.TopicID)
 
 	topic, err := getTopic(req.TopicID)
 	if err != nil {
@@ -905,13 +901,14 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to get exercises: %v", err), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("Found %d cached exercises for topic %s", len(allExercises), req.TopicID)
 
 	var finalExercises []*Exercise
 	if userID == "" {
-		// Guest user logic - only serve from cache, never generate.
+		log.Println("Guest user - serving from cache.")
 		finalExercises = getRandomExercises(allExercises, 10)
 	} else {
-		// Authenticated user SRS logic
+		log.Printf("Authenticated user (ID: %s) - applying SRS logic.", userID)
 		userViews, err := getUserExerciseViews(userID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to get user views: %v", err), http.StatusInternalServerError)
@@ -919,12 +916,16 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 		}
 
 		eligibleExercises := getEligibleExercisesForSRS(allExercises, userViews)
+		log.Printf("%d exercises are eligible for SRS review.", len(eligibleExercises))
+
 		if len(eligibleExercises) < 10 {
+			log.Println("Cache insufficient, generating new exercises.")
 			newlyGenerated, err := generateAndCacheExercises(topic)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to generate exercises: %v", err), http.StatusInternalServerError)
 				return
 			}
+			log.Printf("Generated %d new exercises.", len(newlyGenerated))
 			allExercises = append(allExercises, newlyGenerated...)
 			eligibleExercises = getEligibleExercisesForSRS(allExercises, userViews)
 		}
@@ -948,7 +949,6 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := updateUserExerciseViews(viewsToUpdate); err != nil {
 			log.Printf("Warning: failed to update user exercise views: %v", err)
-			// Don't block user, just log the error
 		}
 	}
 
@@ -958,6 +958,7 @@ func handleExercises(w http.ResponseWriter, r *http.Request) {
 		responseExercises = append(responseExercises, []byte(ex.ExerciseJSON))
 	}
 
+	log.Printf("API: handleExercises - Responding with %d exercises.", len(responseExercises))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string][]json.RawMessage{"exercises": responseExercises})
 }
@@ -1073,6 +1074,7 @@ func getUserIDFromRequest(r *http.Request) string {
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleGenerate (%s)", r.Method)
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1226,6 +1228,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetLastRefinedPrompt(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleGetLastRefinedPrompt (%s)", r.Method)
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1248,6 +1251,7 @@ func handleGetLastRefinedPrompt(w http.ResponseWriter, r *http.Request) {
 
 // Handle topics CRUD operations
 func handleTopics(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleTopics (%s)", r.Method)
 	// Enable CORS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -1299,6 +1303,7 @@ func handleTopics(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUserStats(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleUserStats (%s)", r.Method)
 	cookie, err := r.Cookie("user_id")
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -1332,6 +1337,7 @@ func handleUserStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUserSettings(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleUserSettings (%s)", r.Method)
 	cookie, err := r.Cookie("user_id")
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -1360,9 +1366,7 @@ func handleUserSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUserByGoogleID(googleID string) (*User, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Printf("DB: getUserByGoogleID (googleID: %s)", googleID)
 	var user User
 	err := db.QueryRow("SELECT id, google_id FROM users WHERE google_id = ?", googleID).Scan(&user.ID, &user.GoogleID)
 	if err != nil {
@@ -1375,9 +1379,7 @@ func getUserByGoogleID(googleID string) (*User, error) {
 }
 
 func createUser(googleID string) (*User, error) {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: createUser (googleID: %s)", googleID)
 	user := &User{
 		ID:       uuid.New().String(),
 		GoogleID: googleID,
@@ -1397,11 +1399,10 @@ func createUser(googleID string) (*User, error) {
 }
 
 func getUserStats(userID string) (*UserStats, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Printf("DB: getUserStats (userID: %s)", userID)
 	var stats UserStats
-	err := db.QueryRow("SELECT id, user_id, total_exercises, total_mistakes, total_hints, total_time, last_topic_id FROM user_stats WHERE user_id = ?", userID).Scan(&stats.ID, &stats.UserID, &stats.TotalExercises, &stats.TotalMistakes, &stats.TotalHints, &stats.TotalTime, &stats.LastTopicID)
+	// Use COALESCE to handle NULL last_topic_id
+	err := db.QueryRow("SELECT id, user_id, total_exercises, total_mistakes, total_hints, total_time, COALESCE(last_topic_id, '') FROM user_stats WHERE user_id = ?", userID).Scan(&stats.ID, &stats.UserID, &stats.TotalExercises, &stats.TotalMistakes, &stats.TotalHints, &stats.TotalTime, &stats.LastTopicID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return &UserStats{UserID: userID}, nil // Return empty stats if not found
@@ -1412,9 +1413,7 @@ func getUserStats(userID string) (*UserStats, error) {
 }
 
 func updateUserStats(stats *UserStats) error {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: updateUserStats (userID: %s)", stats.UserID)
 	if stats.ID == "" {
 		stats.ID = uuid.New().String()
 	}
@@ -1438,9 +1437,7 @@ func updateUserStats(stats *UserStats) error {
 }
 
 func updateUserSetting(userID, lastTopicID string) error {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
+	log.Printf("DB: updateUserSetting (userID: %s, lastTopicID: %s)", userID, lastTopicID)
 	stmt, err := db.Prepare(`
         INSERT INTO user_stats (id, user_id, last_topic_id, total_exercises, total_mistakes, total_hints, total_time)
         VALUES (?, ?, ?, 0, 0, 0, 0)
@@ -1457,6 +1454,7 @@ func updateUserSetting(userID, lastTopicID string) error {
 }
 
 func handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleGoogleLogin (%s)", r.Method)
 	if googleOauthConfig == nil {
 		http.Error(w, "Google login is not configured", http.StatusInternalServerError)
 		return
@@ -1466,6 +1464,7 @@ func handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleGoogleCallback (%s)", r.Method)
 	if googleOauthConfig == nil {
 		http.Error(w, "Google login is not configured", http.StatusInternalServerError)
 		return
@@ -1508,6 +1507,7 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user == nil {
+		log.Printf("User with googleID %s not found, creating new user.", userinfo.Id)
 		user, err = createUser(userinfo.Id)
 		if err != nil {
 			log.Printf("Unable to create user: %v", err)
@@ -1516,6 +1516,7 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	log.Printf("Setting user_id cookie for user %s", user.ID)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "user_id",
 		Value:    user.ID,
@@ -1528,6 +1529,7 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleAuthStatus (%s)", r.Method)
 	cookie, err := r.Cookie("user_id")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]any{"logged_in": false})
@@ -1538,6 +1540,7 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleLogout (%s)", r.Method)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "user_id",
 		Value:    "",
@@ -1549,6 +1552,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleIsAdmin(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleIsAdmin (%s)", r.Method)
 	w.Header().Set("Content-Type", "application/json")
 
 	isAdmin := false
@@ -1566,9 +1570,7 @@ func handleIsAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUserByID(userID string) (*User, error) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
+	log.Printf("DB: getUserByID (userID: %s)", userID)
 	var user User
 	err := db.QueryRow("SELECT id, google_id FROM users WHERE id = ?", userID).Scan(&user.ID, &user.GoogleID)
 	if err != nil {
@@ -1612,6 +1614,7 @@ func adminOnly(h http.HandlerFunc) http.HandlerFunc {
 
 // Handle individual topic operations
 func handleTopicByID(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleTopicByID (%s) - Path: %s", r.Method, r.URL.Path)
 	// Enable CORS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
@@ -1690,6 +1693,7 @@ func handleTopicByID(w http.ResponseWriter, r *http.Request) {
 
 // Handle prompt versions
 func handleVersions(w http.ResponseWriter, r *http.Request) {
+	log.Printf("API: handleVersions (%s) - Path: %s", r.Method, r.URL.Path)
 	// Enable CORS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")

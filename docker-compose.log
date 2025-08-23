@@ -1,0 +1,17 @@
+time="2025-08-23T17:32:40Z" level=warning msg="The \"DNS_NAME\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"OPENAI_API_KEY\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"OPENAI_URL\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"MODEL\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"GOOGLE_CLIENT_ID\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"GOOGLE_CLIENT_SECRET\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"GOOGLE_REDIRECT_URL\" variable is not set. Defaulting to a blank string."
+time="2025-08-23T17:32:40Z" level=warning msg="The \"GOOGLE_ADMIN_ID\" variable is not set. Defaulting to a blank string."
+#1 [internal] load local bake definitions
+#1 reading from stdin 484B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.09kB 0.0s done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/alpine:latest
